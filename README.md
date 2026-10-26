@@ -26,6 +26,7 @@
 ---
 
 ## 📑 Table of Contents
+- [📸 Platform Screenshots](#-platform-screenshots)
 - [1. System Architecture](#1-system-architecture)
 - [2. Key Capabilities & Technical Highlights](#2-key-capabilities--technical-highlights)
 - [3. Port Allocation & Network Topology](#3-port-allocation--network-topology)
@@ -35,6 +36,35 @@
 - [7. Step-by-Step Clinical Workflow Guide](#7-step-by-step-clinical-workflow-guide)
 - [8. Automated Testing & Verification](#8-automated-testing--verification)
 - [9. Data Governance & Security Disclosures](#9-data-governance--security-disclosures)
+
+---
+
+## 📸 Platform Screenshots
+
+### 1. Interactive Medical Image Viewer & PyTorch Grad-CAM XAI Workspace
+> *Interactive radiology canvas with pan, zoom (75%–300%), LUT invert, dynamic Grad-CAM opacity blending slider (65%), thermal activation scale legend, Shannon entropy uncertainty metrics, and anatomical quadrant attributions.*
+
+<p align="center">
+  <img src="docs/image/OmniMed.png" alt="Medical Image Viewer and Grad-CAM XAI Workspace" width="100%" />
+</p>
+
+---
+
+### 2. Evidence-Grounded Report Drafting, Version History & Clinician Attestation
+> *Synthesized 5-part radiology report draft with version history tracking (`v1 APPROVED`), clinician context notes integration, evidence provenance chain citations, and signed clinical attestation.*
+
+<p align="center">
+  <img src="docs/image/OmniMed2.png" alt="Evidence-Grounded Report Drafting and Clinician Sign-Off" width="100%" />
+</p>
+
+---
+
+### 3. HL7 FHIR R4 (v4.0.1) Interoperability & Bundle Validation
+> *Automated structural and terminology validation generating verified HL7 FHIR R4 JSON bundles containing `Patient`, `Practitioner`, `Encounter`, `Observation`, `ImagingStudy`, and `DiagnosticReport` resources with `HTEST` synthetic security tags.*
+
+<p align="center">
+  <img src="docs/image/OmniMed3.png" alt="HL7 FHIR R4 Interoperability and Bundle Validator" width="100%" />
+</p>
 
 ---
 
