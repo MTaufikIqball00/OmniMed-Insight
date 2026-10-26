@@ -1,0 +1,27 @@
+{
+  "name": "omnimed-insight-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3100 -H 127.0.0.1",
+    "build": "next build",
+    "start": "next start -p 3100 -H 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test __tests__/ui_contracts.test.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.454.0",
+    "next": "14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3"
+  }
+}

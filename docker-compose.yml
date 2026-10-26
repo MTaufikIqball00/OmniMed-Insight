@@ -1,0 +1,40 @@
+version: "3.9"
+
+# =============================================================================
+# OmniMed Insight (XAI) — Optional Docker Compose Deployment / Dependencies
+# Note: On hosts without Docker installed, use `./run-local.ps1` (Windows) or
+# `./run-local.sh` (Linux/macOS), which run the entire stack natively with SQLx.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: omnimed-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-omnimed_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-omnimed_insight}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - omnimed_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omnimed_app} -d ${POSTGRES_DB:-omnimed_insight}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  fhir-test-server:
+    image: hapiproject/hapi:v7.0.2
+    container_name: omnimed-hapi-fhir
+    profiles: ["fhir"]
+    restart: unless-stopped
+    environment:
+      hapi.fhir.fhir_version: R4
+      hapi.fhir.allow_multiple_delete: "false"
+    ports:
+      - "127.0.0.1:${FHIR_SERVER_PORT:-8300}:8080"
+
+volumes:
+  omnimed_pgdata:
