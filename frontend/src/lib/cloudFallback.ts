@@ -1599,7 +1599,7 @@ export async function cloudFallbackRequest<T>(
       bed_number: "MICU-BED-04",
       admit_time: "2026-10-25T00:00:00Z",
       iculos_hours: 12,
-      chief_syndrome: "Pneumonia with ProgressiveTachypnea & Early Sepsis Risk",
+      chief_syndrome: "Pneumonia with Progressive Tachypnea & Early Sepsis Risk",
       acuity_status: "DETERIORATING",
       created_at: "2026-10-25T00:00:00Z",
       latest_prediction: {
@@ -1633,6 +1633,22 @@ export async function cloudFallbackRequest<T>(
             direction: "INCREASES_RISK",
             clinical_rationale: "Elevated serum lactate (>2.0 mmol/L) indicates tissue hypoperfusion.",
           },
+          {
+            feature: "Resp_roll_mean_6h",
+            display_name: "Mean Respiratory Rate (6h)",
+            current_value: 26.5,
+            shap_value: 0.285,
+            direction: "INCREASES_RISK",
+            clinical_rationale: "Tachypnea is an early respiratory sign of systemic inflammatory response.",
+          },
+          {
+            feature: "Temp_latest",
+            display_name: "Core Temperature (°C)",
+            current_value: 38.9,
+            shap_value: 0.195,
+            direction: "INCREASES_RISK",
+            clinical_rationale: "Fever indicates systemic inflammatory response to infection.",
+          },
         ]),
         vital_summary_json: JSON.stringify({
           HR: { value: 112.0, unit: "bpm", delta_1h: 2.0 },
@@ -1648,34 +1664,183 @@ export async function cloudFallbackRequest<T>(
       },
       active_alert: null,
     },
+    {
+      stay_id: "stay-synth-002",
+      patient_id: "pat-synth-002",
+      mrn: "PT-SYN-002",
+      patient_name: "SYNTHETIC_CASE_BETA (Neuro MRI Cohort)",
+      birth_date: "1979-11-22",
+      sex: "female",
+      icu_unit: "SICU (Surgical ICU)",
+      bed_number: "SICU-BED-02",
+      admit_time: "2026-10-25T04:00:00Z",
+      iculos_hours: 8,
+      chief_syndrome: "Post-Craniotomy Neurological Monitoring",
+      acuity_status: "STABLE",
+      created_at: "2026-10-25T04:00:00Z",
+      latest_prediction: {
+        id: "pred-synth-002",
+        stay_id: "stay-synth-002",
+        patient_id: "pat-synth-002",
+        requested_by: "usr-clin-001",
+        prediction_time: "2026-10-25T12:00:00Z",
+        prediction_horizon: "6-12 hours",
+        risk_score: 0.018,
+        risk_tier: "LOW",
+        decision_threshold: 0.0326,
+        model_id: "icu_sepsis_lgbm_v1",
+        model_version: "1.0.0-physionet2019",
+        data_quality_status: "ADEQUATE",
+        stale_warning: null,
+        shap_attributions_json: JSON.stringify([
+          {
+            feature: "ShockIndex_latest",
+            display_name: "Shock Index (HR / SBP)",
+            current_value: 0.62,
+            shap_value: -0.312,
+            direction: "DECREASES_RISK",
+            clinical_rationale: "Normal Shock Index (<0.7) reflects hemodynamically stable cardiac output.",
+          },
+        ]),
+        vital_summary_json: JSON.stringify({
+          HR: { value: 74.0, unit: "bpm", delta_1h: 0.0 },
+          MAP: { value: 88.0, unit: "mmHg", delta_1h: 0.5 },
+          SBP: { value: 120.0, unit: "mmHg", delta_1h: 1.0 },
+          DBP: { value: 72.0, unit: "mmHg", delta_1h: 0.0 },
+          Resp: { value: 15.0, unit: "breaths/min", delta_1h: 0.0 },
+          O2Sat: { value: 98.5, unit: "%", delta_1h: 0.0 },
+          Temp: { value: 36.8, unit: "degC", delta_1h: 0.0 },
+        }),
+        created_at: "2026-10-25T12:00:00Z",
+      },
+      active_alert: null,
+    },
+    {
+      stay_id: "stay-synth-004",
+      patient_id: "pat-synth-001",
+      mrn: "PT-SYN-001",
+      patient_name: "SYNTHETIC_CASE_ALPHA (Thoracic Cohort)",
+      birth_date: "1968-04-14",
+      sex: "male",
+      icu_unit: "MSICU (Multi-Specialty ICU)",
+      bed_number: "MSICU-BED-01",
+      admit_time: "2026-10-25T02:00:00Z",
+      iculos_hours: 10,
+      chief_syndrome: "Septic Shock with Hyperlactatemia & Vasopressor Refractory Hypotension",
+      acuity_status: "CRITICAL",
+      created_at: "2026-10-25T02:00:00Z",
+      latest_prediction: {
+        id: "pred-synth-004",
+        stay_id: "stay-synth-004",
+        patient_id: "pat-synth-001",
+        requested_by: "usr-clin-001",
+        prediction_time: "2026-10-25T12:00:00Z",
+        prediction_horizon: "6-12 hours",
+        risk_score: 0.942,
+        risk_tier: "CRITICAL",
+        decision_threshold: 0.0326,
+        model_id: "icu_sepsis_lgbm_v1",
+        model_version: "1.0.0-physionet2019",
+        data_quality_status: "ADEQUATE",
+        stale_warning: null,
+        shap_attributions_json: JSON.stringify([
+          {
+            feature: "Lactate_latest",
+            display_name: "Serum Lactate (mmol/L)",
+            current_value: 5.8,
+            shap_value: 0.612,
+            direction: "INCREASES_RISK",
+            clinical_rationale: "Critical hyperlactatemia (>4.0 mmol/L) indicates severe anaerobic tissue hypoperfusion.",
+          },
+          {
+            feature: "ShockIndex_latest",
+            display_name: "Shock Index (HR / SBP)",
+            current_value: 1.58,
+            shap_value: 0.541,
+            direction: "INCREASES_RISK",
+            clinical_rationale: "Severe tachycardia relative to hypotension indicates decompensated shock.",
+          },
+        ]),
+        vital_summary_json: JSON.stringify({
+          HR: { value: 126.0, unit: "bpm", delta_1h: 4.0 },
+          MAP: { value: 52.0, unit: "mmHg", delta_1h: -4.0 },
+          SBP: { value: 80.0, unit: "mmHg", delta_1h: -5.0 },
+          DBP: { value: 42.0, unit: "mmHg", delta_1h: -3.0 },
+          Resp: { value: 32.0, unit: "breaths/min", delta_1h: 2.0 },
+          O2Sat: { value: 89.0, unit: "%", delta_1h: -1.5 },
+          Temp: { value: 39.4, unit: "degC", delta_1h: 0.2 },
+          Lactate: { value: 5.8, unit: "mmol/L", delta_1h: 0.9 },
+        }),
+        created_at: "2026-10-25T12:00:00Z",
+      },
+      active_alert: {
+        id: "alert-synth-004",
+        prediction_id: "pred-synth-004",
+        stay_id: "stay-synth-004",
+        patient_id: "pat-synth-001",
+        patient_mrn: "PT-SYN-001",
+        patient_name: "SYNTHETIC_CASE_ALPHA (Thoracic Cohort)",
+        icu_unit: "MSICU (Multi-Specialty ICU)",
+        bed_number: "MSICU-BED-01",
+        risk_tier: "CRITICAL",
+        risk_score: 0.942,
+        alert_time: "2026-10-25T12:00:00Z",
+        status: "TRIGGERED",
+        cooldown_until: "2026-10-25T16:00:00Z",
+        acknowledged_by: null,
+        acknowledged_at: null,
+        acknowledgement_notes: null,
+        created_at: "2026-10-25T12:00:00Z",
+      },
+    },
   ];
 
   if (pathname === "/api/icu/stays" && method === "GET") {
-    return { stays: fallbackStays } as unknown as T;
+    return { stays: fallbackStays, total: fallbackStays.length } as unknown as T;
   }
 
   const icuStayMatch = pathname.match(/^\/api\/icu\/stays\/([^/]+)$/);
   if (icuStayMatch && method === "GET") {
     const stay = fallbackStays.find((s) => s.stay_id === icuStayMatch[1]) || fallbackStays[0];
+    const patient = state.patients.find((p) => p.id === stay.patient_id) || state.patients[0];
+
+    // Generate 12 hourly observations matching IcuObservationRecord interface
+    const generatedObs: any[] = [];
+    const maxHour = stay.iculos_hours || 12;
+    for (let h = 1; h <= maxHour; h++) {
+      const ts = new Date(Date.now() - (maxHour - h) * 3600000).toISOString();
+      const isCritical = stay.stay_id === "stay-synth-004";
+      const isDeteriorating = stay.stay_id === "stay-synth-001";
+
+      const hrVal = isCritical ? 98 + h * 2.8 : (isDeteriorating ? 88 + h * 2.0 : 72 + (h % 3));
+      const mapVal = isCritical ? 72 - h * 2.0 : (isDeteriorating ? 76 - h * 1.2 : 88 - (h % 2));
+      const sbpVal = isCritical ? 112 - h * 3.2 : (isDeteriorating ? 118 - h * 2.3 : 122 - (h % 3));
+      const dbpVal = isCritical ? 58 - h * 1.5 : (isDeteriorating ? 64 - h * 1.1 : 72 - (h % 2));
+      const respVal = isCritical ? 20 + h * 1.2 : (isDeteriorating ? 18 + h * 0.8 : 15 + (h % 2));
+      const o2Val = isCritical ? 96 - h * 0.7 : (isDeteriorating ? 96 - h * 0.35 : 98 + (h % 2) * 0.5);
+      const tempVal = Number((isCritical ? 37.4 + h * 0.2 : (isDeteriorating ? 37.2 + h * 0.14 : 36.8)).toFixed(2));
+      const lacVal = Number((isCritical ? 1.6 + h * 0.42 : (isDeteriorating ? 1.2 + h * 0.18 : 1.1)).toFixed(2));
+      const wbcVal = Number((isCritical ? 11.0 + h * 0.6 : (isDeteriorating ? 9.5 + h * 0.3 : 6.8)).toFixed(2));
+
+      generatedObs.push(
+        { id: `obs-${stay.stay_id}-hr-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "HR", valuenum: Number(hrVal.toFixed(1)), value_unit: "bpm", loinc_code: "8867-4", recorded_at: ts },
+        { id: `obs-${stay.stay_id}-map-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "MAP", valuenum: Number(mapVal.toFixed(1)), value_unit: "mmHg", loinc_code: "8478-0", recorded_at: ts },
+        { id: `obs-${stay.stay_id}-sbp-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "SBP", valuenum: Number(sbpVal.toFixed(1)), value_unit: "mmHg", loinc_code: "8480-6", recorded_at: ts },
+        { id: `obs-${stay.stay_id}-dbp-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "DBP", valuenum: Number(dbpVal.toFixed(1)), value_unit: "mmHg", loinc_code: "8462-4", recorded_at: ts },
+        { id: `obs-${stay.stay_id}-resp-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "Resp", valuenum: Number(respVal.toFixed(1)), value_unit: "breaths/min", loinc_code: "9279-1", recorded_at: ts },
+        { id: `obs-${stay.stay_id}-o2-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "O2Sat", valuenum: Number(o2Val.toFixed(1)), value_unit: "%", loinc_code: "2708-6", recorded_at: ts },
+        { id: `obs-${stay.stay_id}-temp-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "Temp", valuenum: tempVal, value_unit: "degC", loinc_code: "8310-5", recorded_at: ts },
+        { id: `obs-${stay.stay_id}-lac-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "Lactate", valuenum: lacVal, value_unit: "mmol/L", loinc_code: "2524-7", recorded_at: ts },
+        { id: `obs-${stay.stay_id}-wbc-${h}`, stay_id: stay.stay_id, patient_id: stay.patient_id, iculos_hour: h, chart_time: ts, variable_name: "WBC", valuenum: wbcVal, value_unit: "10^9/L", loinc_code: "6690-2", recorded_at: ts }
+      );
+    }
+
     return {
       stay,
-      observations_count: 84,
-      hourly_vitals: Array.from({ length: 12 }, (_, idx) => {
-        const h = idx + 1;
-        return {
-          iculos_hour: h,
-          HR: 88 + h * 2,
-          MAP: 76 - h * 1.2,
-          SBP: 118 - h * 2.2,
-          DBP: 64 - h * 1.1,
-          Resp: 18 + h * 0.8,
-          O2Sat: 96 - h * 0.35,
-          Temp: Number((37.2 + h * 0.14).toFixed(2)),
-          Lactate: h >= 4 ? Number((1.4 + (h - 4) * 0.25).toFixed(2)) : undefined,
-        };
-      }),
+      patient,
+      observations: generatedObs,
       predictions: stay.latest_prediction ? [stay.latest_prediction] : [],
-      alerts: [],
+      alerts: stay.active_alert ? [stay.active_alert] : [],
       active_model: fallbackModels[0],
       models: fallbackModels,
     } as unknown as T;
@@ -1685,18 +1850,17 @@ export async function cloudFallbackRequest<T>(
   if (icuPredictMatch && method === "POST") {
     const stay = fallbackStays.find((s) => s.stay_id === icuPredictMatch[1]) || fallbackStays[0];
     return {
+      prediction_id: stay.latest_prediction?.id || "pred-demo",
+      risk_score: stay.latest_prediction?.risk_score || 0.482,
+      risk_tier: stay.latest_prediction?.risk_tier || "HIGH",
+      prediction_horizon: "6-12 hours",
       prediction: stay.latest_prediction,
-      inference_detail: {
-        risk_score: 0.482,
-        risk_tier: "HIGH",
-        shap_attributions: JSON.parse(stay.latest_prediction.shap_attributions_json),
-      },
-      triggered_alert: null,
     } as unknown as T;
   }
 
   if (pathname === "/api/icu/alerts" && method === "GET") {
-    return { alerts: [] } as unknown as T;
+    const allAlerts = fallbackStays.map((s) => s.active_alert).filter(Boolean);
+    return { alerts: allAlerts } as unknown as T;
   }
 
   const icuAckMatch = pathname.match(/^\/api\/icu\/alerts\/([^/]+)\/acknowledge$/);

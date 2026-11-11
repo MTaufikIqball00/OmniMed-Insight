@@ -80,6 +80,80 @@ interface SystemStatusData {
   }>;
 }
 
+interface TabErrorBoundaryProps {
+  tabName: string;
+  children: React.ReactNode;
+}
+
+interface TabErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class TabErrorBoundary extends React.Component<
+  TabErrorBoundaryProps,
+  TabErrorBoundaryState
+> {
+  constructor(props: TabErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): TabErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error(
+      `[OmniMed Tab Error: ${this.props.tabName}]`,
+      error,
+      errorInfo
+    );
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-xl border border-rose-300 bg-rose-50/70 p-6 text-rose-950 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="rounded-lg bg-rose-100 p-2 text-rose-700">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <div className="space-y-2 flex-1">
+              <h3 className="text-base font-semibold text-rose-900">
+                Gagal memuat modul {this.props.tabName}
+              </h3>
+              <p className="text-sm text-rose-800">
+                Terjadi kesalahan pada rendering komponen tab ini. Data sistem
+                utama tetap aman dan Anda dapat beralih ke modul lain atau memuat
+                ulang tab.
+              </p>
+              {this.state.error?.message && (
+                <div className="rounded border border-rose-200 bg-white/90 p-3 font-mono text-xs text-rose-800">
+                  {this.state.error.message}
+                </div>
+              )}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    this.setState({ hasError: false, error: null })
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-rose-700 shadow-sm"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Coba Muat Ulang Modul
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function OmniMedApp() {
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
   const [permissions, setPermissions] = useState<RolePermissions | null>(null);
@@ -1874,10 +1948,12 @@ export default function OmniMedApp() {
         {/* TAB: ICU EARLY WARNING & SEPSIS DETERIORATION WORKSPACE         */}
         {/* =============================================================== */}
         {activeTab === "icu-early-warning" && (
-          <IcuEarlyWarningWorkspace
-            user={user}
-            onShowNotice={(n) => setBannerNotice(n)}
-          />
+          <TabErrorBoundary tabName="ICU Early Warning & Sepsis Prediction">
+            <IcuEarlyWarningWorkspace
+              user={user}
+              onShowNotice={(n) => setBannerNotice(n)}
+            />
+          </TabErrorBoundary>
         )}
 
         {/* =============================================================== */}
