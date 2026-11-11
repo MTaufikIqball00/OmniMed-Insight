@@ -3,16 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "description": "OmniMed Insight (XAI) — Multimodal Clinical Decision-Support Platform",
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
-    "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend install && npm --prefix frontend run build",
-    "start": "npm --prefix frontend run start",
-    "typecheck": "npm --prefix frontend run typecheck",
-    "test": "npm --prefix frontend test"
+    "dev": "npm --workspace=frontend run dev",
+    "build": "npm --workspace=frontend run build",
+    "start": "npm --workspace=frontend run start",
+    "typecheck": "npm --workspace=frontend run typecheck",
+    "test": "npm --workspace=frontend test"
   },
   "dependencies": {
-    "next": "14.2.15",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "next": "^14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }
