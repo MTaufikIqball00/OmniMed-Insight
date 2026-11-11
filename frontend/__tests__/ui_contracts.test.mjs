@@ -39,4 +39,21 @@ test("Main clinical workspace enforces RBAC visibility, provenance citations, an
   assert.match(pageSrc, /Test Cross-Patient IDOR Guard/);
   assert.match(pageSrc, /aria-label="Primary Workspace Navigation"/);
   assert.match(pageSrc, /role="alert"/);
+  assert.match(pageSrc, /ICU Early Warning/);
 });
+
+test("IcuEarlyWarningWorkspace implements 6-12h horizon, SHAP attributions, alert sign-off, and physiological trends", () => {
+  const icuSrc = fs.readFileSync(
+    path.join(rootDir, "src", "components", "IcuEarlyWarningWorkspace.tsx"),
+    "utf8"
+  );
+  assert.match(icuSrc, /6–12h HORIZON/);
+  assert.match(icuSrc, /SHAP Feature Attributions/);
+  assert.match(icuSrc, /TreeExplainer Local/);
+  assert.match(icuSrc, /INCREASES_RISK/);
+  assert.match(icuSrc, /DECREASES_RISK/);
+  assert.match(icuSrc, /Acknowledge Clinical Deterioration Alert/);
+  assert.match(icuSrc, /Longitudinal Observations & Temporal Trends/);
+  assert.match(icuSrc, /Measured Metrics on Held-Out Test Set/);
+});
+

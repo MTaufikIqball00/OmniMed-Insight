@@ -1,4 +1,6 @@
+from contextlib import asynccontextmanager
 import hmac
+import json
 import os
 from typing import Any, Dict, Optional
 
@@ -7,17 +9,17 @@ from fastapi.responses import JSONResponse
 import torch
 
 from .imaging import ImageValidationError
-from .schemas import AnalyzeImageRequest, AnalyzeImageResponse
-from .xai_engine import MODALITY_CLASS_CATALOG, MedicalDenseNetXaiEngine
-
-app = FastAPI(
-    title="OmniMed Insight — Internal Medical AI & XAI Inference Service",
-    version="1.0.0",
-    docs_url=None,
-    redoc_url=None,
+from .schemas import (
+    AnalyzeImageRequest,
+    AnalyzeImageResponse,
+    IcuPredictRequest,
+    IcuPredictResponse,
 )
+from .xai_engine import MODALITY_CLASS_CATALOG, MedicalDenseNetXaiEngine
+from .icu_engine import IcuEarlyWarningEngine
 
 ENGINE: Optional[MedicalDenseNetXaiEngine] = None
+ICU_ENGINE: Optional[IcuEarlyWarningEngine] = None
 
 
 def get_engine() -> MedicalDenseNetXaiEngine:
@@ -25,6 +27,28 @@ def get_engine() -> MedicalDenseNetXaiEngine:
     if ENGINE is None:
         ENGINE = MedicalDenseNetXaiEngine()
     return ENGINE
+
+
+def get_icu_engine() -> IcuEarlyWarningEngine:
+    global ICU_ENGINE
+    if ICU_ENGINE is None:
+        ICU_ENGINE = IcuEarlyWarningEngine()
+    return ICU_ENGINE
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    get_engine()
+    yield
+
+
+app = FastAPI(
+    title="OmniMed Insight — Internal Medical AI & XAI Inference Service",
+    version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+    lifespan=lifespan,
+)
 
 
 def verify_internal_token(
@@ -49,11 +73,6 @@ def verify_internal_token(
                 "message": "Invalid or missing X-Internal-Service-Token header.",
             },
         )
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    get_engine()
 
 
 @app.exception_handler(ImageValidationError)
@@ -119,6 +138,32 @@ def list_models() -> Dict[str, Any]:
                 "classes_by_modality": {},
                 "status": "UNAVAILABLE_EXTERNAL_API_DISABLED",
             },
+            {
+                "model_id": "omnimed-icu-lightgbm-v1",
+                "model_version": "1.0.0",
+                "architecture": "LightGBM + SHAP TreeExplainer (Temporal Sepsis-3 Early Warning)",
+                "calibration_status": "VALIDATED_TEST_COHORT",
+                "execution_device": "CPU",
+                "prediction_horizon": "6_to_12_hours",
+                "decision_threshold": 0.05,
+                "supported_modalities": ["ICU_LONGITUDINAL_VITALS_AND_LABS"],
+                "supported_xai_methods": ["TREE_SHAP_FEATURE_ATTRIBUTION"],
+                "target_endpoint": "SEPSIS_DETERIORATION",
+                "status": "IMPLEMENTED_AND_READY",
+            },
+            {
+                "model_id": "omnimed-icu-cohort-lgbm-v1",
+                "model_version": "1.0.0",
+                "architecture": "LightGBM + SHAP TreeExplainer (Archive2 5,000-Patient ICU Cohort)",
+                "calibration_status": "VALIDATED_TEST_COHORT",
+                "execution_device": "CPU",
+                "prediction_horizon": "ICU_ADMISSION_AND_STAY",
+                "decision_threshold": 0.05,
+                "supported_modalities": ["ICU_COHORT_CLINICAL_PANEL"],
+                "supported_xai_methods": ["TREE_SHAP_FEATURE_ATTRIBUTION"],
+                "target_endpoint": "SEPSIS_AND_CHF_DETERIORATION",
+                "status": "IMPLEMENTED_AND_READY",
+            },
         ]
     }
 
@@ -131,3 +176,37 @@ def list_models() -> Dict[str, Any]:
 def analyze_medical_image(payload: AnalyzeImageRequest) -> AnalyzeImageResponse:
     eng = get_engine()
     return eng.analyze(payload)
+
+
+@app.post(
+    "/internal/v1/icu/predict",
+    response_model=IcuPredictResponse,
+    dependencies=[Depends(verify_internal_token)],
+)
+def predict_icu_risk(payload: IcuPredictRequest) -> IcuPredictResponse:
+    eng = get_icu_engine()
+    obs_dicts = [o.model_dump() for o in payload.observations]
+    res = eng.predict(
+        stay_id=payload.stay_id,
+        patient_id=payload.patient_id,
+        current_iculos=payload.current_iculos,
+        observations=obs_dicts,
+        age=payload.age if payload.age is not None else 65.0,
+        gender=payload.gender if payload.gender is not None else 0.0,
+    )
+    return IcuPredictResponse(**res)
+
+
+@app.get(
+    "/internal/v1/icu/models",
+    dependencies=[Depends(verify_internal_token)],
+)
+def get_icu_model_metadata() -> Dict[str, Any]:
+    eng = get_icu_engine()
+    res = dict(eng.meta)
+    cohort_meta_file = eng.models_dir / "cohort_champion_meta.json"
+    if cohort_meta_file.exists():
+        with open(cohort_meta_file, "r", encoding="utf-8") as f:
+            res["cohort_model"] = json.load(f)
+    return res
+

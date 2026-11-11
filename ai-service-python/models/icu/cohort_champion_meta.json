@@ -1,0 +1,335 @@
+{
+  "model_id": "omnimed-icu-cohort-lgbm-v1",
+  "dataset_source": "Archive2 Sepsis ICU Synthetic Cohort (5,000 patients, Anti-Leakage Filtered)",
+  "algorithm": "lightgbm",
+  "target_endpoint": "sepsis_label",
+  "test_metrics": {
+    "auroc": 0.9954,
+    "auprc": 0.9864,
+    "brier_score": 0.0111,
+    "threshold_used": 0.35,
+    "sensitivity": 0.9643,
+    "specificity": 0.9922,
+    "precision": 0.9558,
+    "f1_score": 0.96,
+    "confusion_matrix": {
+      "true_negatives": 633,
+      "false_positives": 5,
+      "false_negatives": 4,
+      "true_positives": 108
+    },
+    "model_name": "LightGBM Gradient Boosted Decision Trees"
+  },
+  "chf_secondary_metrics": {
+    "auroc": 0.7176,
+    "auprc": 0.2678,
+    "brier_score": 0.1798,
+    "threshold_used": 0.33,
+    "sensitivity": 0.835,
+    "specificity": 0.5672,
+    "precision": 0.235,
+    "f1_score": 0.3667,
+    "confusion_matrix": {
+      "true_negatives": 367,
+      "false_positives": 280,
+      "false_negatives": 17,
+      "true_positives": 86
+    },
+    "model_name": "Secondary Endpoint: Congestive Heart Failure (CHF)"
+  },
+  "top_features": [
+    {
+      "feature": "ph_arterial",
+      "importance": 0.47947
+    },
+    {
+      "feature": "inr",
+      "importance": 0.33851
+    },
+    {
+      "feature": "respiratory_rate_mean",
+      "importance": 0.33234
+    },
+    {
+      "feature": "shock_index",
+      "importance": 0.32664
+    },
+    {
+      "feature": "spo2_mean",
+      "importance": 0.30292
+    },
+    {
+      "feature": "bicarbonate",
+      "importance": 0.30113
+    },
+    {
+      "feature": "platelet_count",
+      "importance": 0.22342
+    },
+    {
+      "feature": "respiratory_rate_min",
+      "importance": 0.11635
+    },
+    {
+      "feature": "temp_celsius_max",
+      "importance": 0.0825
+    },
+    {
+      "feature": "temp_celsius_min",
+      "importance": 0.0677
+    },
+    {
+      "feature": "spo2_max",
+      "importance": 0.06566
+    },
+    {
+      "feature": "temp_celsius_mean",
+      "importance": 0.06339
+    },
+    {
+      "feature": "hr_min",
+      "importance": 0.04382
+    },
+    {
+      "feature": "temp_deviation",
+      "importance": 0.0427
+    },
+    {
+      "feature": "spo2_min",
+      "importance": 0.03764
+    },
+    {
+      "feature": "respiratory_rate_max",
+      "importance": 0.0343
+    },
+    {
+      "feature": "ph_arterial_missing",
+      "importance": 0.0207
+    },
+    {
+      "feature": "wbc",
+      "importance": 0.0183
+    },
+    {
+      "feature": "age",
+      "importance": 0.01248
+    },
+    {
+      "feature": "hr_max",
+      "importance": 0.01138
+    },
+    {
+      "feature": "dbp_mean",
+      "importance": 0.01013
+    },
+    {
+      "feature": "hr_mean",
+      "importance": 0.00865
+    },
+    {
+      "feature": "bicarbonate_missing",
+      "importance": 0.00555
+    },
+    {
+      "feature": "insurance_Medicare",
+      "importance": 0.00174
+    },
+    {
+      "feature": "sbp_min",
+      "importance": 0.00068
+    }
+  ],
+  "feature_cols": [
+    "age",
+    "weight_kg",
+    "height_cm",
+    "bmi",
+    "hr_mean",
+    "hr_max",
+    "hr_min",
+    "hr_std",
+    "sbp_mean",
+    "sbp_max",
+    "sbp_min",
+    "sbp_std",
+    "dbp_mean",
+    "dbp_max",
+    "dbp_min",
+    "dbp_std",
+    "map_mean",
+    "temp_celsius_mean",
+    "temp_celsius_max",
+    "temp_celsius_min",
+    "temp_celsius_std",
+    "spo2_mean",
+    "spo2_min",
+    "spo2_max",
+    "spo2_std",
+    "respiratory_rate_mean",
+    "respiratory_rate_max",
+    "respiratory_rate_min",
+    "respiratory_rate_std",
+    "wbc",
+    "platelet_count",
+    "bilirubin_total",
+    "glucose",
+    "ph_arterial",
+    "inr",
+    "sodium",
+    "potassium",
+    "chloride",
+    "bicarbonate",
+    "hematocrit",
+    "hemoglobin",
+    "diabetes",
+    "hypertension",
+    "chf",
+    "copd",
+    "chronic_kidney_disease",
+    "liver_disease",
+    "immunosuppression",
+    "cad",
+    "atrial_fibrillation",
+    "cancer_active",
+    "gcs_total",
+    "icu_admit_time_hour",
+    "day_of_week",
+    "gender_code",
+    "ethnicity_Black",
+    "ethnicity_Hispanic",
+    "ethnicity_Other",
+    "ethnicity_White",
+    "insurance_Medicare",
+    "insurance_Private",
+    "insurance_Self-pay",
+    "hospital_admit_source_ED",
+    "hospital_admit_source_OR",
+    "hospital_admit_source_Transfer",
+    "shock_index",
+    "pulse_pressure",
+    "map_hypoperfusion_depth",
+    "temp_deviation",
+    "wbc_missing",
+    "platelet_count_missing",
+    "bilirubin_total_missing",
+    "glucose_missing",
+    "ph_arterial_missing",
+    "inr_missing",
+    "sodium_missing",
+    "potassium_missing",
+    "chloride_missing",
+    "bicarbonate_missing",
+    "hematocrit_missing",
+    "hemoglobin_missing",
+    "map_mean_missing",
+    "bmi_missing"
+  ],
+  "excluded_leakage_cols": [
+    "subject_id",
+    "gender",
+    "sepsis_label",
+    "icu_los_hours",
+    "readmission_30day",
+    "vasopressors_flag",
+    "vasopressor_dose_mcg_kg_min",
+    "mechanical_ventilation",
+    "fio2_percent",
+    "antibiotics_24h",
+    "fluids_ml_24h",
+    "sedation_score",
+    "insulin_infusion_flag",
+    "sofa_score",
+    "apache_iv",
+    "sirs_criteria",
+    "qsofa",
+    "pao2_fio2_ratio",
+    "lactate_mmol",
+    "creatinine"
+  ],
+  "imputation_medians": {
+    "age": 65.0,
+    "weight_kg": 73.8,
+    "height_cm": 170.2,
+    "bmi": 25.6,
+    "hr_mean": 88.2,
+    "hr_max": 99.8,
+    "hr_min": 75.2,
+    "hr_std": 7.9,
+    "sbp_mean": 126.5,
+    "sbp_max": 138.8,
+    "sbp_min": 114.4,
+    "sbp_std": 10.1,
+    "dbp_mean": 76.3,
+    "dbp_max": 85.2,
+    "dbp_min": 67.1,
+    "dbp_std": 7.0,
+    "map_mean": 93.2,
+    "temp_celsius_mean": 37.3,
+    "temp_celsius_max": 37.75,
+    "temp_celsius_min": 36.8,
+    "temp_celsius_std": 0.3,
+    "spo2_mean": 96.7,
+    "spo2_min": 94.6,
+    "spo2_max": 97.7,
+    "spo2_std": 1.48,
+    "respiratory_rate_mean": 17.0,
+    "respiratory_rate_max": 21.0,
+    "respiratory_rate_min": 14.0,
+    "respiratory_rate_std": 2.0,
+    "wbc": 9.186420176773547,
+    "platelet_count": 267.0,
+    "bilirubin_total": 0.62,
+    "glucose": 121.0,
+    "ph_arterial": 7.395,
+    "inr": 1.11,
+    "sodium": 138.1,
+    "potassium": 4.03,
+    "chloride": 101.9,
+    "bicarbonate": 23.7,
+    "hematocrit": 35.1,
+    "hemoglobin": 11.7,
+    "diabetes": 0.0,
+    "hypertension": 1.0,
+    "chf": 0.0,
+    "copd": 0.0,
+    "chronic_kidney_disease": 0.0,
+    "liver_disease": 0.0,
+    "immunosuppression": 0.0,
+    "cad": 0.0,
+    "atrial_fibrillation": 0.0,
+    "cancer_active": 0.0,
+    "gcs_total": 9.0,
+    "icu_admit_time_hour": 14.0,
+    "day_of_week": 4.0,
+    "gender_code": 1.0,
+    "ethnicity_Black": 0.0,
+    "ethnicity_Hispanic": 0.0,
+    "ethnicity_Other": 0.0,
+    "ethnicity_White": 1.0,
+    "insurance_Medicare": 0.0,
+    "insurance_Private": 0.0,
+    "insurance_Self-pay": 0.0,
+    "hospital_admit_source_ED": 1.0,
+    "hospital_admit_source_OR": 0.0,
+    "hospital_admit_source_Transfer": 0.0,
+    "shock_index": 0.6961750250111924,
+    "pulse_pressure": 50.60000000000001,
+    "map_hypoperfusion_depth": 0.0,
+    "temp_deviation": 0.3999999999999986,
+    "wbc_missing": 0.0,
+    "platelet_count_missing": 0.0,
+    "bilirubin_total_missing": 0.0,
+    "glucose_missing": 0.0,
+    "ph_arterial_missing": 0.0,
+    "inr_missing": 0.0,
+    "sodium_missing": 0.0,
+    "potassium_missing": 0.0,
+    "chloride_missing": 0.0,
+    "bicarbonate_missing": 0.0,
+    "hematocrit_missing": 0.0,
+    "hemoglobin_missing": 0.0,
+    "map_mean_missing": 0.0,
+    "bmi_missing": 0.0
+  },
+  "clinical_disclaimer": "Auxiliary risk stratification decision-support model trained on Archive2 ICU cohort (post-event interventions and synthetic target proxies excluded). Synthetic data strictly for engineering validation."
+}

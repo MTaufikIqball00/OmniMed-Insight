@@ -366,3 +366,150 @@ pub struct InternalAiResponse {
     pub limitations: Vec<String>,
     pub clinical_safety_notice: String,
 }
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct IcuStayRow {
+    pub id: String,
+    pub patient_id: String,
+    pub icu_unit: String,
+    pub bed_number: String,
+    pub admit_time: String,
+    pub discharge_time: Option<String>,
+    pub iculos_hours: i64,
+    pub chief_syndrome: String,
+    pub acuity_status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct IcuObservationRow {
+    pub id: String,
+    pub stay_id: String,
+    pub patient_id: String,
+    pub iculos_hour: i64,
+    pub chart_time: String,
+    pub variable_name: String,
+    pub valuenum: f64,
+    pub value_unit: String,
+    pub loinc_code: Option<String>,
+    pub recorded_at: String,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct IcuPredictionRow {
+    pub id: String,
+    pub stay_id: String,
+    pub patient_id: String,
+    pub requested_by: String,
+    pub prediction_time: String,
+    pub prediction_horizon: String,
+    pub risk_score: f64,
+    pub risk_tier: String,
+    pub decision_threshold: f64,
+    pub model_id: String,
+    pub model_version: String,
+    pub data_quality_status: String,
+    pub stale_warning: Option<String>,
+    pub shap_attributions_json: String,
+    pub vital_summary_json: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct IcuAlertRow {
+    pub id: String,
+    pub prediction_id: String,
+    pub stay_id: String,
+    pub patient_id: String,
+    pub risk_tier: String,
+    pub risk_score: f64,
+    pub alert_time: String,
+    pub status: String,
+    pub cooldown_until: Option<String>,
+    pub acknowledged_by: Option<String>,
+    pub acknowledged_at: Option<String>,
+    pub acknowledgement_notes: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct IcuModelRow {
+    pub id: String,
+    pub model_id: String,
+    pub model_name: String,
+    pub version: String,
+    pub algorithm: String,
+    pub target_endpoint: String,
+    pub prediction_horizon: String,
+    pub decision_threshold: f64,
+    pub auroc: f64,
+    pub auprc: f64,
+    pub brier_score: f64,
+    pub sensitivity: f64,
+    pub specificity: f64,
+    pub f1_score: f64,
+    pub metrics_json: String,
+    pub top_features_json: String,
+    pub is_active: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AcknowledgeAlertRequest {
+    pub notes: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TriggerIcuPredictRequest {
+    pub current_iculos: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InternalIcuObsItem {
+    pub chart_time: Option<String>,
+    pub variable_name: String,
+    pub value: f64,
+    pub unit: Option<String>,
+    pub loinc_code: Option<String>,
+    pub iculos_hour: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InternalIcuPredictRequest {
+    pub stay_id: String,
+    pub patient_id: String,
+    pub current_iculos: i64,
+    pub observations: Vec<InternalIcuObsItem>,
+    pub age: Option<f64>,
+    pub gender: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InternalShapItem {
+    pub feature: String,
+    pub display_name: String,
+    pub current_value: f64,
+    pub shap_value: f64,
+    pub direction: String,
+    pub clinical_rationale: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InternalIcuPredictResponse {
+    pub stay_id: String,
+    pub patient_id: String,
+    pub prediction_time: String,
+    pub prediction_horizon: String,
+    pub risk_score: f64,
+    pub risk_tier: String,
+    pub model_id: String,
+    pub model_version: String,
+    pub decision_threshold: f64,
+    pub data_quality_status: String,
+    pub stale_observations_warning: Option<String>,
+    pub top_shap_attributions: Vec<InternalShapItem>,
+    pub vital_signs_summary: serde_json::Value,
+    pub clinical_disclaimer: String,
+}
+

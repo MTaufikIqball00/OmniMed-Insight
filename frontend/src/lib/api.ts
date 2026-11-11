@@ -302,3 +302,108 @@ export async function fetchAuthorizedImageBlobUrl(path: string): Promise<string>
     return cloudFallbackImageBlobUrl(path);
   }
 }
+
+// =============================================================================
+// ICU Early Warning & Sepsis Deterioration Interfaces
+// =============================================================================
+
+export interface IcuStayRecord {
+  stay_id: string;
+  patient_id: string;
+  mrn: string;
+  patient_name: string;
+  birth_date: string;
+  sex: string;
+  icu_unit: string;
+  bed_number: string;
+  admit_time: string;
+  iculos_hours: number;
+  chief_syndrome: string;
+  acuity_status: "STABLE" | "MONITORING" | "DETERIORATING" | "CRITICAL";
+  created_at: string;
+  latest_prediction?: IcuPredictionRecord | null;
+  active_alert?: IcuAlertRecord | null;
+}
+
+export interface IcuObservationRecord {
+  id: string;
+  stay_id: string;
+  patient_id: string;
+  iculos_hour: number;
+  chart_time: string;
+  variable_name: string;
+  valuenum: number;
+  value_unit: string;
+  loinc_code?: string | null;
+  recorded_at: string;
+}
+
+export interface IcuShapItem {
+  feature: string;
+  display_name: string;
+  current_value: number;
+  shap_value: number;
+  direction: "INCREASES_RISK" | "DECREASES_RISK" | "NEUTRAL";
+  clinical_rationale: string;
+}
+
+export interface IcuPredictionRecord {
+  id: string;
+  stay_id: string;
+  patient_id: string;
+  requested_by: string;
+  prediction_time: string;
+  prediction_horizon: string;
+  risk_score: number;
+  risk_tier: "LOW" | "MODERATE" | "HIGH" | "CRITICAL" | "INSUFFICIENT_DATA";
+  decision_threshold: number;
+  model_id: string;
+  model_version: string;
+  data_quality_status: "ADEQUATE" | "SPARSE_DATA" | "STALE_OBSERVATIONS" | "INSUFFICIENT_DATA";
+  stale_warning?: string | null;
+  shap_attributions_json: string;
+  vital_summary_json: string;
+  created_at: string;
+}
+
+export interface IcuAlertRecord {
+  id: string;
+  prediction_id: string;
+  stay_id: string;
+  patient_id: string;
+  patient_mrn?: string;
+  patient_name?: string;
+  icu_unit?: string;
+  bed_number?: string;
+  risk_tier: string;
+  risk_score: number;
+  alert_time: string;
+  status: "TRIGGERED" | "ACKNOWLEDGED" | "RESOLVED";
+  cooldown_until?: string | null;
+  acknowledged_by?: string | null;
+  acknowledged_at?: string | null;
+  acknowledgement_notes?: string | null;
+  created_at: string;
+}
+
+export interface IcuModelRecord {
+  id: string;
+  model_id: string;
+  model_name: string;
+  version: string;
+  algorithm: string;
+  target_endpoint: string;
+  prediction_horizon: string;
+  decision_threshold: number;
+  auroc: number;
+  auprc: number;
+  brier_score: number;
+  sensitivity: number;
+  specificity: number;
+  f1_score: number;
+  metrics_json: string;
+  top_features_json: string;
+  is_active: number;
+  created_at: string;
+}
+

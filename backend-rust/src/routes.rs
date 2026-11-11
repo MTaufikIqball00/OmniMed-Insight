@@ -19,11 +19,14 @@ use crate::{
     config::AppConfig,
     error::AppError,
     models::{
-        AnalysisJobRow, AuditLogRow, AuthenticatedUser, ClinicalCaseRow, CreateCaseRequest,
-        CreateObservationRequest, CreatePatientRequest, CreateUserRequest, GenerateReportDraftRequest,
-        InternalAiRequest, InternalAiResponse, LoginRequest, LoginResponse, MedicalImageRow,
-        ObservationRow, PatientRow, ProvenanceCitation, ReportDraftRow, ReviewReportRequest,
-        TriggerAnalysisRequest, UpdateReportDraftRequest, UpdateUserRequest, UserRole, UserRow,
+        AcknowledgeAlertRequest, AnalysisJobRow, AuditLogRow, AuthenticatedUser, ClinicalCaseRow,
+        CreateCaseRequest, CreateObservationRequest, CreatePatientRequest, CreateUserRequest,
+        GenerateReportDraftRequest, IcuAlertRow, IcuModelRow, IcuObservationRow, IcuPredictionRow,
+        IcuStayRow, InternalAiRequest, InternalAiResponse, InternalIcuObsItem,
+        InternalIcuPredictRequest, InternalIcuPredictResponse, LoginRequest, LoginResponse,
+        MedicalImageRow, ObservationRow, PatientRow, ProvenanceCitation, ReportDraftRow,
+        ReviewReportRequest, TriggerAnalysisRequest, TriggerIcuPredictRequest,
+        UpdateReportDraftRequest, UpdateUserRequest, UserRole, UserRow,
     },
 };
 
@@ -2678,3 +2681,556 @@ pub async fn list_audit_logs(
         "total": logs.len(),
     })))
 }
+
+// =============================================================================
+// ICU Early Warning & Sepsis Deterioration Handlers
+// =============================================================================
+
+pub async fn list_icu_stays(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    method: Method,
+) -> Result<Json<Value>, AppError> {
+    let user = authenticate_request(&state.db, &headers, &method).await?;
+
+    let stays_sql = if user.role == UserRole::Admin {
+        r#"
+        SELECT
+            s.id AS stay_id,
+            s.patient_id AS patient_id,
+            p.mrn AS mrn,
+            p.full_name AS patient_name,
+            p.birth_date AS birth_date,
+            p.sex AS sex,
+            s.icu_unit AS icu_unit,
+            s.bed_number AS bed_number,
+            s.admit_time AS admit_time,
+            s.iculos_hours AS iculos_hours,
+            s.chief_syndrome AS chief_syndrome,
+            s.acuity_status AS acuity_status,
+            s.created_at AS created_at
+        FROM icu_stays s
+        JOIN patients p ON p.id = s.patient_id
+        ORDER BY s.created_at DESC
+        "#
+    } else {
+        r#"
+        SELECT
+            s.id AS stay_id,
+            s.patient_id AS patient_id,
+            p.mrn AS mrn,
+            p.full_name AS patient_name,
+            p.birth_date AS birth_date,
+            p.sex AS sex,
+            s.icu_unit AS icu_unit,
+            s.bed_number AS bed_number,
+            s.admit_time AS admit_time,
+            s.iculos_hours AS iculos_hours,
+            s.chief_syndrome AS chief_syndrome,
+            s.acuity_status AS acuity_status,
+            s.created_at AS created_at
+        FROM icu_stays s
+        JOIN patients p ON p.id = s.patient_id
+        JOIN patient_assignments pa ON pa.patient_id = s.patient_id
+        WHERE pa.user_id = ?
+        ORDER BY s.created_at DESC
+        "#
+    };
+
+    let raw_rows = if user.role == UserRole::Admin {
+        sqlx::query(stays_sql).fetch_all(&state.db).await?
+    } else {
+        sqlx::query(stays_sql)
+            .bind(&user.user_id)
+            .fetch_all(&state.db)
+            .await?
+    };
+
+    let mut stays_list = Vec::new();
+    for r in raw_rows {
+        use sqlx::Row;
+        let stay_id: String = r.get("stay_id");
+
+        // Fetch latest prediction for this stay
+        let latest_pred: Option<IcuPredictionRow> = sqlx::query_as(
+            "SELECT * FROM icu_predictions WHERE stay_id = ? ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(&stay_id)
+        .fetch_optional(&state.db)
+        .await?;
+
+        // Fetch active alert if any
+        let active_alert: Option<IcuAlertRow> = sqlx::query_as(
+            "SELECT * FROM icu_alerts WHERE stay_id = ? AND status = 'TRIGGERED' ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(&stay_id)
+        .fetch_optional(&state.db)
+        .await?;
+
+        stays_list.push(json!({
+            "stay_id": stay_id,
+            "patient_id": r.get::<String, _>("patient_id"),
+            "mrn": r.get::<String, _>("mrn"),
+            "patient_name": r.get::<String, _>("patient_name"),
+            "birth_date": r.get::<String, _>("birth_date"),
+            "sex": r.get::<String, _>("sex"),
+            "icu_unit": r.get::<String, _>("icu_unit"),
+            "bed_number": r.get::<String, _>("bed_number"),
+            "admit_time": r.get::<String, _>("admit_time"),
+            "iculos_hours": r.get::<i64, _>("iculos_hours"),
+            "chief_syndrome": r.get::<String, _>("chief_syndrome"),
+            "acuity_status": r.get::<String, _>("acuity_status"),
+            "created_at": r.get::<String, _>("created_at"),
+            "latest_prediction": latest_pred,
+            "active_alert": active_alert,
+        }));
+    }
+
+    Ok(Json(json!({
+        "stays": stays_list,
+        "total": stays_list.len(),
+    })))
+}
+
+pub async fn get_icu_stay_workspace(
+    State(state): State<Arc<AppState>>,
+    Path(stay_id): Path<String>,
+    headers: HeaderMap,
+    method: Method,
+) -> Result<Json<Value>, AppError> {
+    let user = authenticate_request(&state.db, &headers, &method).await?;
+
+    let stay: Option<IcuStayRow> = sqlx::query_as("SELECT * FROM icu_stays WHERE id = ?")
+        .bind(&stay_id)
+        .fetch_optional(&state.db)
+        .await?;
+
+    let stay = stay.ok_or_else(|| AppError::NotFound("ICU stay record not found.".into()))?;
+    verify_patient_access(&state.db, &user, &stay.patient_id).await?;
+
+    let patient: PatientRow = sqlx::query_as("SELECT * FROM patients WHERE id = ?")
+        .bind(&stay.patient_id)
+        .fetch_one(&state.db)
+        .await?;
+
+    let observations: Vec<IcuObservationRow> = sqlx::query_as(
+        "SELECT * FROM icu_observations WHERE stay_id = ? ORDER BY iculos_hour ASC, chart_time ASC",
+    )
+    .bind(&stay_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let predictions: Vec<IcuPredictionRow> = sqlx::query_as(
+        "SELECT * FROM icu_predictions WHERE stay_id = ? ORDER BY created_at DESC LIMIT 20",
+    )
+    .bind(&stay_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let alerts: Vec<IcuAlertRow> = sqlx::query_as(
+        "SELECT * FROM icu_alerts WHERE stay_id = ? ORDER BY created_at DESC LIMIT 10",
+    )
+    .bind(&stay_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let models: Vec<IcuModelRow> = sqlx::query_as(
+        "SELECT * FROM icu_models WHERE is_active = 1 ORDER BY id ASC",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let active_model = models.first().cloned();
+
+    Ok(Json(json!({
+        "stay": stay,
+        "patient": patient,
+        "observations": observations,
+        "predictions": predictions,
+        "alerts": alerts,
+        "active_model": active_model,
+        "models": models,
+    })))
+}
+
+pub async fn trigger_icu_prediction(
+    State(state): State<Arc<AppState>>,
+    Path(stay_id): Path<String>,
+    headers: HeaderMap,
+    method: Method,
+    Json(payload): Json<TriggerIcuPredictRequest>,
+) -> Result<Json<Value>, AppError> {
+    let user = authenticate_request(&state.db, &headers, &method).await?;
+
+    if matches!(user.role, UserRole::Readonly) {
+        return Err(AppError::Forbidden(
+            "Read-only observers cannot trigger new AI risk estimations.".into(),
+        ));
+    }
+
+    let stay: Option<IcuStayRow> = sqlx::query_as("SELECT * FROM icu_stays WHERE id = ?")
+        .bind(&stay_id)
+        .fetch_optional(&state.db)
+        .await?;
+    let stay = stay.ok_or_else(|| AppError::NotFound("ICU stay record not found.".into()))?;
+    verify_patient_access(&state.db, &user, &stay.patient_id).await?;
+
+    let patient: PatientRow = sqlx::query_as("SELECT * FROM patients WHERE id = ?")
+        .bind(&stay.patient_id)
+        .fetch_one(&state.db)
+        .await?;
+
+    let current_iculos = payload.current_iculos.unwrap_or(stay.iculos_hours);
+
+    // Fetch observations up to current_iculos (strict anti-leakage boundary!)
+    let obs_rows: Vec<IcuObservationRow> = sqlx::query_as(
+        "SELECT * FROM icu_observations WHERE stay_id = ? AND iculos_hour <= ? ORDER BY iculos_hour ASC",
+    )
+    .bind(&stay_id)
+    .bind(current_iculos)
+    .fetch_all(&state.db)
+    .await?;
+
+    let obs_items: Vec<InternalIcuObsItem> = obs_rows
+        .into_iter()
+        .map(|r| InternalIcuObsItem {
+            chart_time: Some(r.chart_time),
+            variable_name: r.variable_name,
+            value: r.valuenum,
+            unit: Some(r.value_unit),
+            loinc_code: r.loinc_code,
+            iculos_hour: Some(r.iculos_hour),
+        })
+        .collect();
+
+    // Calculate patient age from birth_date (YYYY-MM-DD), fallback to 65.0
+    let calculated_age = patient
+        .birth_date
+        .get(0..4)
+        .and_then(|yr| yr.parse::<i32>().ok())
+        .map(|yr| (2026 - yr).clamp(18, 110) as f64)
+        .unwrap_or(65.0);
+
+    let req_body = InternalIcuPredictRequest {
+        stay_id: stay_id.clone(),
+        patient_id: stay.patient_id.clone(),
+        current_iculos,
+        observations: obs_items,
+        age: Some(calculated_age),
+        gender: Some(if patient.sex == "female" { 0.0 } else { 1.0 }),
+    };
+
+    let ai_url = format!("{}/internal/v1/icu/predict", state.config.python_ai_service_url);
+    let resp = state
+        .http_client
+        .post(&ai_url)
+        .header("X-Internal-Service-Token", &state.config.internal_service_token)
+        .json(&req_body)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to connect to ICU ML inference service: {}", e)))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(AppError::Internal(format!(
+            "ICU ML service returned error: {}",
+            err_text
+        )));
+    }
+
+    let ai_res: InternalIcuPredictResponse = resp.json().await.map_err(|e| {
+        AppError::Internal(format!("Failed to parse ICU prediction response: {}", e))
+    })?;
+
+    let pred_id = format!("pred-{}", Uuid::new_v4());
+    let now = Utc::now().to_rfc3339();
+    let shap_json = serde_json::to_string(&ai_res.top_shap_attributions).unwrap_or_else(|_| "[]".into());
+    let vital_json = serde_json::to_string(&ai_res.vital_signs_summary).unwrap_or_else(|_| "{}".into());
+
+    sqlx::query(
+        r#"
+        INSERT INTO icu_predictions (
+            id, stay_id, patient_id, requested_by, prediction_time, prediction_horizon,
+            risk_score, risk_tier, decision_threshold, model_id, model_version,
+            data_quality_status, stale_warning, shap_attributions_json, vital_summary_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(&pred_id)
+    .bind(&stay_id)
+    .bind(&stay.patient_id)
+    .bind(&user.user_id)
+    .bind(&ai_res.prediction_time)
+    .bind(&ai_res.prediction_horizon)
+    .bind(ai_res.risk_score)
+    .bind(&ai_res.risk_tier)
+    .bind(ai_res.decision_threshold)
+    .bind(&ai_res.model_id)
+    .bind(&ai_res.model_version)
+    .bind(&ai_res.data_quality_status)
+    .bind(&ai_res.stale_observations_warning)
+    .bind(&shap_json)
+    .bind(&vital_json)
+    .bind(&now)
+    .execute(&state.db)
+    .await?;
+
+    // Alert Generation with Deduplication & Cooldown:
+    let mut generated_alert_id = None;
+    if ai_res.risk_tier == "HIGH" || ai_res.risk_tier == "CRITICAL" {
+        // Cooldown check: has an active alert been triggered for this stay?
+        let recent_alert: Option<(String,)> = sqlx::query_as(
+            r#"
+            SELECT id FROM icu_alerts
+            WHERE stay_id = ? AND status = 'TRIGGERED'
+            ORDER BY created_at DESC LIMIT 1
+            "#,
+        )
+        .bind(&stay_id)
+        .fetch_optional(&state.db)
+        .await?;
+
+        if recent_alert.is_none() {
+            let alert_id = format!("alert-{}", Uuid::new_v4());
+            let cooldown = (Utc::now() + Duration::hours(4)).to_rfc3339();
+            sqlx::query(
+                r#"
+                INSERT INTO icu_alerts (
+                    id, prediction_id, stay_id, patient_id, risk_tier, risk_score,
+                    alert_time, status, cooldown_until, acknowledged_by, acknowledged_at,
+                    acknowledgement_notes, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'TRIGGERED', ?, NULL, NULL, NULL, ?)
+                "#,
+            )
+            .bind(&alert_id)
+            .bind(&pred_id)
+            .bind(&stay_id)
+            .bind(&stay.patient_id)
+            .bind(&ai_res.risk_tier)
+            .bind(ai_res.risk_score)
+            .bind(&now)
+            .bind(&cooldown)
+            .bind(&now)
+            .execute(&state.db)
+            .await?;
+            generated_alert_id = Some(alert_id);
+        }
+    }
+
+    record_audit_event(
+        &state.db,
+        AuditEntry {
+            actor_user_id: Some(&user.user_id),
+            actor_email: &user.email,
+            actor_role: user.role.as_str(),
+            event_category: "ICU_PREDICTION",
+            event_action: "ESTIMATE_DETERIORATION_RISK",
+            resource_type: "icu_stay",
+            resource_id: &stay_id,
+            outcome: "SUCCESS",
+            ip_address: "127.0.0.1",
+            details_redacted: &format!("Tier: {}, Score: {:.4}, Horizon: 6-12h", ai_res.risk_tier, ai_res.risk_score),
+        },
+    )
+    .await;
+
+    Ok(Json(json!({
+        "prediction_id": pred_id,
+        "stay_id": stay_id,
+        "risk_score": ai_res.risk_score,
+        "risk_tier": ai_res.risk_tier,
+        "prediction_horizon": ai_res.prediction_horizon,
+        "decision_threshold": ai_res.decision_threshold,
+        "data_quality_status": ai_res.data_quality_status,
+        "stale_warning": ai_res.stale_observations_warning,
+        "top_shap_attributions": ai_res.top_shap_attributions,
+        "vital_summary": ai_res.vital_signs_summary,
+        "generated_alert_id": generated_alert_id,
+        "created_at": now,
+    })))
+}
+
+pub async fn list_icu_alerts(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    method: Method,
+) -> Result<Json<Value>, AppError> {
+    let user = authenticate_request(&state.db, &headers, &method).await?;
+
+    let alerts_sql = if user.role == UserRole::Admin {
+        r#"
+        SELECT
+            a.id AS id,
+            a.prediction_id AS prediction_id,
+            a.stay_id AS stay_id,
+            a.patient_id AS patient_id,
+            p.mrn AS patient_mrn,
+            p.full_name AS patient_name,
+            s.icu_unit AS icu_unit,
+            s.bed_number AS bed_number,
+            a.risk_tier AS risk_tier,
+            a.risk_score AS risk_score,
+            a.alert_time AS alert_time,
+            a.status AS status,
+            a.cooldown_until AS cooldown_until,
+            a.acknowledged_by AS acknowledged_by,
+            a.acknowledged_at AS acknowledged_at,
+            a.acknowledgement_notes AS acknowledgement_notes,
+            a.created_at AS created_at
+        FROM icu_alerts a
+        JOIN icu_stays s ON s.id = a.stay_id
+        JOIN patients p ON p.id = a.patient_id
+        ORDER BY a.created_at DESC LIMIT 50
+        "#
+    } else {
+        r#"
+        SELECT
+            a.id AS id,
+            a.prediction_id AS prediction_id,
+            a.stay_id AS stay_id,
+            a.patient_id AS patient_id,
+            p.mrn AS patient_mrn,
+            p.full_name AS patient_name,
+            s.icu_unit AS icu_unit,
+            s.bed_number AS bed_number,
+            a.risk_tier AS risk_tier,
+            a.risk_score AS risk_score,
+            a.alert_time AS alert_time,
+            a.status AS status,
+            a.cooldown_until AS cooldown_until,
+            a.acknowledged_by AS acknowledged_by,
+            a.acknowledged_at AS acknowledged_at,
+            a.acknowledgement_notes AS acknowledgement_notes,
+            a.created_at AS created_at
+        FROM icu_alerts a
+        JOIN icu_stays s ON s.id = a.stay_id
+        JOIN patients p ON p.id = a.patient_id
+        JOIN patient_assignments pa ON pa.patient_id = a.patient_id
+        WHERE pa.user_id = ?
+        ORDER BY a.created_at DESC LIMIT 50
+        "#
+    };
+
+    let raw_rows = if user.role == UserRole::Admin {
+        sqlx::query(alerts_sql).fetch_all(&state.db).await?
+    } else {
+        sqlx::query(alerts_sql)
+            .bind(&user.user_id)
+            .fetch_all(&state.db)
+            .await?
+    };
+
+    let rows: Vec<serde_json::Value> = raw_rows
+        .into_iter()
+        .map(|r| {
+            use sqlx::Row;
+            json!({
+                "id": r.get::<String, _>("id"),
+                "prediction_id": r.get::<String, _>("prediction_id"),
+                "stay_id": r.get::<String, _>("stay_id"),
+                "patient_id": r.get::<String, _>("patient_id"),
+                "patient_mrn": r.get::<String, _>("patient_mrn"),
+                "patient_name": r.get::<String, _>("patient_name"),
+                "icu_unit": r.get::<String, _>("icu_unit"),
+                "bed_number": r.get::<String, _>("bed_number"),
+                "risk_tier": r.get::<String, _>("risk_tier"),
+                "risk_score": r.get::<f64, _>("risk_score"),
+                "alert_time": r.get::<String, _>("alert_time"),
+                "status": r.get::<String, _>("status"),
+                "cooldown_until": r.get::<Option<String>, _>("cooldown_until"),
+                "acknowledged_by": r.get::<Option<String>, _>("acknowledged_by"),
+                "acknowledged_at": r.get::<Option<String>, _>("acknowledged_at"),
+                "acknowledgement_notes": r.get::<Option<String>, _>("acknowledgement_notes"),
+                "created_at": r.get::<String, _>("created_at"),
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({ "alerts": rows, "total": rows.len() })))
+}
+
+pub async fn acknowledge_icu_alert(
+    State(state): State<Arc<AppState>>,
+    Path(alert_id): Path<String>,
+    headers: HeaderMap,
+    method: Method,
+    Json(payload): Json<AcknowledgeAlertRequest>,
+) -> Result<Json<Value>, AppError> {
+    let user = authenticate_request(&state.db, &headers, &method).await?;
+
+    if matches!(user.role, UserRole::Readonly) {
+        return Err(AppError::Forbidden(
+            "Read-only observers cannot sign or acknowledge deterioration alerts.".into(),
+        ));
+    }
+
+    let alert: Option<IcuAlertRow> = sqlx::query_as("SELECT * FROM icu_alerts WHERE id = ?")
+        .bind(&alert_id)
+        .fetch_optional(&state.db)
+        .await?;
+
+    let alert = alert.ok_or_else(|| AppError::NotFound("Alert record not found.".into()))?;
+    verify_patient_access(&state.db, &user, &alert.patient_id).await?;
+
+    let now = Utc::now().to_rfc3339();
+    sqlx::query(
+        r#"
+        UPDATE icu_alerts
+        SET status = 'ACKNOWLEDGED',
+            acknowledged_by = ?,
+            acknowledged_at = ?,
+            acknowledgement_notes = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(&user.user_id)
+    .bind(&now)
+    .bind(&payload.notes)
+    .bind(&alert_id)
+    .execute(&state.db)
+    .await?;
+
+    record_audit_event(
+        &state.db,
+        AuditEntry {
+            actor_user_id: Some(&user.user_id),
+            actor_email: &user.email,
+            actor_role: user.role.as_str(),
+            event_category: "ICU_ALERT_ACKNOWLEDGED",
+            event_action: "SIGN_ALERT_ACKNOWLEDGEMENT",
+            resource_type: "icu_alert",
+            resource_id: &alert_id,
+            outcome: "SUCCESS",
+            ip_address: "127.0.0.1",
+            details_redacted: &format!("Notes: {}", payload.notes),
+        },
+    )
+    .await;
+
+    Ok(Json(json!({
+        "id": alert_id,
+        "status": "ACKNOWLEDGED",
+        "acknowledged_by": user.user_id,
+        "acknowledged_at": now,
+        "notes": payload.notes,
+    })))
+}
+
+pub async fn list_icu_models(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    method: Method,
+) -> Result<Json<Value>, AppError> {
+    let _user = authenticate_request(&state.db, &headers, &method).await?;
+
+    let models: Vec<IcuModelRow> = sqlx::query_as("SELECT * FROM icu_models ORDER BY id ASC")
+        .fetch_all(&state.db)
+        .await?;
+
+    Ok(Json(json!({
+        "models": models,
+        "total": models.len()
+    })))
+}
+

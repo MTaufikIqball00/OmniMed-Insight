@@ -97,3 +97,48 @@ class ErrorResponse(BaseModel):
     error_code: str
     message: str
     details: Optional[str] = None
+
+
+class IcuObservationItem(BaseModel):
+    chart_time: Optional[str] = None
+    variable_name: str
+    value: float
+    unit: Optional[str] = ""
+    loinc_code: Optional[str] = None
+    iculos_hour: Optional[int] = None
+
+
+class IcuPredictRequest(BaseModel):
+    stay_id: str
+    patient_id: str
+    current_iculos: int
+    observations: List[IcuObservationItem]
+    age: Optional[float] = 65.0
+    gender: Optional[float] = 0.0
+
+
+class ShapAttributionItem(BaseModel):
+    feature: str
+    display_name: str
+    current_value: float
+    shap_value: float
+    direction: Literal["INCREASES_RISK", "DECREASES_RISK", "NEUTRAL"]
+    clinical_rationale: str
+
+
+class IcuPredictResponse(BaseModel):
+    stay_id: str
+    patient_id: str
+    prediction_time: str
+    prediction_horizon: str
+    risk_score: float
+    risk_tier: Literal["LOW", "MODERATE", "HIGH", "CRITICAL", "INSUFFICIENT_DATA"]
+    model_id: str
+    model_version: str
+    decision_threshold: float
+    data_quality_status: Literal["ADEQUATE", "SPARSE_DATA", "STALE_OBSERVATIONS", "INSUFFICIENT_DATA"]
+    stale_observations_warning: Optional[str] = None
+    top_shap_attributions: List[ShapAttributionItem]
+    vital_signs_summary: Dict[str, Optional[float]]
+    clinical_disclaimer: str
+

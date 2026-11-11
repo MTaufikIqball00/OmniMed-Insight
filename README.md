@@ -75,11 +75,11 @@ OmniMed Insight enforces strict architectural boundaries: **Rust** serves as the
 ```mermaid
 flowchart TD
     subgraph Client["Healthcare Professional Client (Browser)"]
-        UI["Next.js 14 App Router + Tailwind CSS v3\nPort: 3100\n- Medical Image Viewer (Pan, Zoom, LUT)\n- Grad-CAM Heatmap Opacity Slider\n- Report Version History & Editor\n- Patient Registry & Case Management"]
+        UI["Next.js 14 App Router + Tailwind CSS v3\nPort: 3100\n- Medical Image Viewer (Pan, Zoom, LUT)\n- Grad-CAM Heatmap Opacity Slider\n- Report Version History & Editor\n- Patient Registry & Case Management\n- ICU Early Warning & Sepsis Dashboard (6-12h Horizon)"]
     end
 
     subgraph SecurityBoundary["Primary Application Backend & Security Boundary (Rust)"]
-        Axum["Axum 0.7 REST API Server\nPort: 8100\n- Argon2id Password Hashing\n- HttpOnly Session Cookies + Anti-CSRF Token\n- Server-Side RBAC & IDOR Guard (patient_assignments)\n- Immutable Security Audit Trail\n- HL7 FHIR R4 Validator & Bundle Exporter"]
+        Axum["Axum 0.7 REST API Server\nPort: 8100\n- Argon2id Password Hashing\n- HttpOnly Session Cookies + Anti-CSRF Token\n- Server-Side RBAC & IDOR Guard (patient_assignments)\n- Immutable Security Audit Trail\n- HL7 FHIR R4 Validator & Bundle Exporter\n- ICU Stays, Longitudinal Vitals & Alert Deduplication Engine"]
         DB[("SQLx Storage Layer\nDefault: SQLite (./data/omnimed.db)\nConfigurable: PostgreSQL :5433")]
         Storage[("./data/storage/\n- Uploads (Original Image + SHA-256)\n- Overlays (Grad-CAM RGBA Artifcats)")]
         Axum --> DB
@@ -87,7 +87,7 @@ flowchart TD
     end
 
     subgraph AIService["Isolated Medical AI & Explainability Engine (Python)"]
-        FastAPI["FastAPI Inference Engine\nPort: 8200\n- Magic-Byte Binary Header Validator\n- PyTorch DenseNet-121 Vision Model\n- Real Grad-CAM Hooks (features.denseblock4)\n- Patch Occlusion & Shannon Uncertainty"]
+        FastAPI["FastAPI Inference Engine\nPort: 8200\n- Magic-Byte Binary Header Validator\n- PyTorch DenseNet-121 Vision Model\n- Real Grad-CAM Hooks (features.denseblock4)\n- Patch Occlusion & Shannon Uncertainty\n- LightGBM ICU Sepsis-3 Early Warning (6-12h Horizon)\n- Tree SHAP Feature Attribution Engine"]
     end
 
     subgraph Interop["Interoperability Layer (Optional)"]
@@ -127,6 +127,13 @@ flowchart TD
 * **Live Patient Registration**: Register new synthetic patients directly from the UI with automated `SYNTH-MRN` generation, FHIR Patient ID mapping, and automated clinician assignment.
 * **On-Demand Case Creation**: Open new CXR (Chest Radiograph) or Brain MRI cases linked to any registered patient with custom priorities (`ROUTINE`, `URGENT`, `STAT`).
 
+### ⚡ ICU Early Warning & Sepsis Deterioration Prediction (6–12h Horizon)
+* **PhysioNet 2019 Longitudinal Clinical Benchmark (`v1.0.0-physionet2019`)**: Trained, calibrated, and evaluated on 118 real ICU stays (4,615 hourly records) from the Computing in Cardiology Challenge 2019 under CC BY 4.0 with zero patient overlap across splits (`AUROC = 0.8663`, `Sensitivity = 100.0%`, `Specificity = 56.4%`, `Brier = 0.0232` vs qSOFA baseline `AUROC = 0.5548`).
+* **Archive2 5,000-Patient Multi-Center Synthetic Cohort (`v2.0.0-archive2-5k`)**: Audited for strict anti-leakage (excluding post-event interventions, future discharge outcomes, and synthetic deterministic proxies), evaluating 83 baseline physiological and laboratory predictors (`AUROC = 0.9954`, `AUPRC = 0.9864`, `Brier = 0.0111`) alongside a separate Secondary Endpoint model for Heart Failure / Cardiovascular Deterioration (`CHF AUROC = 0.7176`).
+* **Sepsis-3 Horizon Modeling**: Targets an explicit **6 to 12-hour warning horizon** preceding clinical sepsis onset ($t_{sepsis}-12 \le t \le t_{sepsis}-6$) using backward-looking observations only (no future data leakage).
+* **Tree SHAP Local Feature Attributions**: Integrates TreeExplainer to compute exact feature attribution vectors showing directional impact (`INCREASES_RISK` vs `DECREASES_RISK`) across vitals, labs, pulse pressure, shock index, and temperature volatility.
+* **Alert Deduplication & Signed Clinician Sign-Off**: Stratifies risk (`CRITICAL`, `HIGH`, `MODERATE`, `LOW`, `INSUFFICIENT_DATA`), suppresses repeated alerts with a 4-hour cooldown window, and requires signed clinician acknowledgement notes permanently logged in `audit_logs`.
+
 ### 🏥 HL7 FHIR R4 Interoperability
 * Generates validated FHIR R4 JSON Bundles encapsulating `Patient`, `Practitioner`, `Encounter`, `Observation` (LOINC-coded vitals and labs), `ImagingStudy`, and `DiagnosticReport` resources.
 
@@ -140,7 +147,7 @@ All services are configured centrally via `.env` (derived from `.env.example`) a
 | :--- | :---: | :--- | :--- |
 | **Frontend UI** | `3100` | HTTP | Next.js 14 Web Workspace & Diagnostic Viewer |
 | **Primary Backend** | `8100` | HTTP | Rust Axum API, Auth, Security Boundary, FHIR Validator |
-| **Python AI Engine** | `8200` | HTTP | Internal PyTorch DenseNet-121 + Grad-CAM Service |
+| **Python AI Engine** | `8200` | HTTP | Internal PyTorch DenseNet-121 + Grad-CAM + LightGBM ICU Engine |
 | **FHIR Test Server** | `8300` | HTTP | Optional external HL7 FHIR R4 endpoint |
 | **PostgreSQL** | `5433` | TCP | Optional containerized database (SQLite is local default) |
 
@@ -153,7 +160,8 @@ OmniMed Insight/
 ├── backend-rust/                  # Primary Rust Backend
 │   ├── Cargo.toml                 # Axum, Tokio, SQLx, Argon2 dependencies
 │   ├── migrations/                # SQLx database schema migrations
-│   │   └── 0001_initial_schema.sql
+│   │   ├── 0001_initial_schema.sql
+│   │   └── 0002_icu_early_warning_schema.sql
 │   ├── src/
 │   │   ├── audit.rs               # Immutable audit logging engine
 │   │   ├── auth.rs                # Argon2id, session cookies, IDOR checks
@@ -170,24 +178,30 @@ OmniMed Insight/
 │   │   ├── config.py              # Environment configuration & token validator
 │   │   ├── imaging.py             # Binary magic-byte & SHA-256 verification
 │   │   ├── xai_engine.py          # PyTorch DenseNet-121 & Grad-CAM hooks
+│   │   ├── icu_engine.py          # LightGBM Sepsis-3 & Tree SHAP inference engine
 │   │   └── main.py                # FastAPI endpoints & health checks
-│   ├── tests/                     # Pytest suite for inference & XAI
-│   └── requirements.txt           # PyTorch, TorchVision, FastAPI, Pillow
+│   ├── icu_pipeline/              # Reproducible ICU feature engineering & training
+│   ├── models/icu/                # Serialized joblib artifacts & JSON metadata
+│   ├── tests/                     # Pytest suite for imaging & ICU inference
+│   └── requirements.txt           # PyTorch, LightGBM, XGBoost, SHAP, FastAPI
 ├── frontend/                      # Next.js 14 + Tailwind CSS Frontend
 │   ├── package.json               # Next.js 14.2, Tailwind v3, Lucide icons
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── layout.tsx         # Root layout & third-party error boundary
-│   │   │   ├── page.tsx           # Multimodal clinical workspace (5 Tabs)
+│   │   │   ├── page.tsx           # Multimodal clinical workspace (6 Tabs)
 │   │   │   └── globals.css        # Tailwind directives & medical utility styles
 │   │   └── components/
-│   │       └── MedicalImageViewer.tsx # Interactive canvas viewer (LUT, Zoom, Pan)
+│   │       ├── MedicalImageViewer.tsx       # Interactive canvas viewer (LUT, Zoom, Pan)
+│   │       └── IcuEarlyWarningWorkspace.tsx # Longitudinal ICU vitals, SHAP & alert console
 │   └── __tests__/                 # Frontend contract & contract tests
 ├── data/                          # Local application state (gitignored)
 │   ├── omnimed.db                 # SQLite relational database
 │   └── storage/                   # Uploaded scans & derived Grad-CAM overlays
-├── docs/                          # Architectural documentation & UI audits
+├── docs/                          # Architectural documentation & clinical reports
 │   ├── ARCHITECTURE.md            # Comprehensive threat model & specs
+│   ├── ICU_DATASET_AND_LABEL_SPEC.md # Sepsis-3 6-12h horizon & cohort provenance
+│   ├── ARCHIVE2_DATASET_REPORT.md # 5,000-patient synthetic cohort & anti-leakage audit
 │   └── UI_AUDIT.md                # Accessibility & Tailwind v3 checklist
 ├── run-local.bat                  # One-click Windows Batch launcher
 ├── run-local.ps1                  # PowerShell launcher with port conflict detection
@@ -240,8 +254,8 @@ The local development seed provides pre-configured role accounts to test access 
 
 | Role | Email | Password | Assigned Permissions |
 | :--- | :--- | :--- | :--- |
-| **Clinician** | `clinician@omnimed-insight.local` | `Clinician!2026` | Register patients, open cases, upload scans, run Grad-CAM XAI, author/edit drafts, sign off reports. Assigned to `pat-synth-001` and `pat-synth-002`. |
-| **System Admin** | `admin@omnimed-insight.local` | `AdminAlpha2026!` | Manage users, view full audit log trail, access all patient cases across departments. |
+| **Clinician** | `clinician@omnimed-insight.local` | `Clinician!2026` | Register patients, open cases, upload scans, run Grad-CAM XAI, trigger ICU Sepsis-3 predictions, acknowledge ICU alerts, author/edit drafts. Assigned to `pat-synth-001` and `pat-synth-002`. |
+| **System Admin** | `admin@omnimed-insight.local` | `AdminAlpha2026!` | Manage users, view full audit log trail, access all patient cases and ICU stays across departments. |
 | **Senior Reviewer** | `reviewer@omnimed-insight.local` | `Reviewer!2026` | Inspect completed cases, review XAI evidence, approve or reject report drafts. (Write/Edit disabled). |
 | **Clinical Observer** | `readonly@omnimed-insight.local` | `Readonly!2026` | Read-only view of patient charts and completed reports. (All mutations blocked). |
 | **Isolated Clinician** | `dr.other@omnimed-insight.local` | `Clinician!2026` | Assigned exclusively to `pat-synth-003`. Used for testing cross-patient IDOR boundaries. |
@@ -260,14 +274,17 @@ The local development seed provides pre-configured role accounts to test access 
    * Click **`Execute Medical Image & Grad-CAM Analysis`**. PyTorch DenseNet-121 runs forward and backward passes, computing class logits and spatial sensitivity maps.
    * Adjust the **Grad-CAM Opacity Slider** (0%–100%), switch **Invert LUT**, and zoom in to inspect attribution focus.
    * Enter optional attending notes and click **`Generate Evidence-Grounded Report Draft →`**.
-4. **Report Drafting & Sign-Off**:
+4. **ICU Early Warning (6–12h)**:
+   * Switch to the **ICU Early Warning (6–12h)** tab to monitor active ICU stays (`MICU`, `SICU`, `CCU`, `MSICU`).
+   * Inspect longitudinal vital trajectories (`HR`, `MAP`, `SBP/DBP`, `Resp`, `SpO2`, `Temp`, `Lactate`), run live **LightGBM + Tree SHAP** risk inference, review local SHAP directional attributions, and sign off active sepsis alerts.
+5. **Report Drafting & Sign-Off**:
    * The workspace switches to the **Report Drafting & Review** tab.
    * Inspect the synthesized 5-part report (sourced facts, model predictions, Grad-CAM quadrant summary, impression narrative, and mandatory safety limitations).
    * Switch between draft versions using the **Daftar Versi Laporan** bar (`v1`, `v2`, etc.).
    * In the right column, enter clinical attestation notes and click **`Approve Draft`** or **`Reject Draft`**.
-5. **FHIR R4 Bundle Export**:
+6. **FHIR R4 Bundle Export**:
    * Open the **FHIR R4 Bundle** tab to inspect or download the complete interoperable HL7 FHIR JSON bundle.
-6. **Audit & System Status**:
+7. **Audit & System Status**:
    * Switch to the **Audit & System Status** tab to review the immutable audit log recording your actions with timestamp and user ID.
 
 ---
@@ -278,26 +295,28 @@ Every layer contains dedicated automated test suites:
 
 ### 1. Python AI Service Tests (PyTest)
 ```bash
-python -m pytest ai-service-python/tests/test_inference.py -v
-# Output: 6 passed (Inference, Grad-CAM, Patch Occlusion, Magic Bytes, Token Auth)
+python -m pytest ai-service-python/tests/ -v
+# Output: 12 passed (Imaging XAI, Temporal Leakage Prevention, Patient-Boundary Isolation, ICU SHAP Inference, Archive2 Cohort Validation)
 ```
 
 ### 2. Rust Backend Security & Integration Tests (Cargo Test)
 ```bash
 cd backend-rust
 cargo test
-# Output: 3 passed
-# - test_report_drafting_clinician_review_and_fhir_r4_bundle ... ok
+# Output: 5 passed
 # - test_health_and_authentication_lifecycle ... ok
 # - test_cross_patient_idor_prevention_and_rbac_boundaries ... ok
+# - test_report_drafting_clinician_review_and_fhir_r4_bundle ... ok
+# - test_icu_stays_listing_and_rbac_boundaries ... ok
+# - test_icu_models_and_alert_acknowledgement_workflow ... ok
 ```
 
 ### 3. Frontend Contract & Type Validation
 ```bash
 cd frontend
-npx tsc --noEmit
+npm run typecheck
 node __tests__/ui_contracts.test.mjs
-# Output: 0 TypeScript errors, 3/3 contract tests passed
+# Output: 0 TypeScript errors, 4/4 contract tests passed
 ```
 
 ---

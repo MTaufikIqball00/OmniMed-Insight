@@ -104,6 +104,12 @@ pub fn build_app_router(state: Arc<AppState>) -> Router {
             patch(routes::admin_update_user),
         )
         .route("/api/admin/audit-logs", get(routes::list_audit_logs))
+        .route("/api/icu/stays", get(routes::list_icu_stays))
+        .route("/api/icu/stays/:stay_id", get(routes::get_icu_stay_workspace))
+        .route("/api/icu/stays/:stay_id/predict", post(routes::trigger_icu_prediction))
+        .route("/api/icu/alerts", get(routes::list_icu_alerts))
+        .route("/api/icu/alerts/:alert_id/acknowledge", post(routes::acknowledge_icu_alert))
+        .route("/api/icu/models", get(routes::list_icu_models))
         .layer(DefaultBodyLimit::max(max_body))
         .layer(cors)
         .with_state(state)

@@ -1,0 +1,9 @@
+{
+  "total_patients_analyzed": 118,
+  "total_hourly_records": 4615,
+  "train_positive_ratio": 0.0218,
+  "val_positive_ratio": 0.0165,
+  "test_positive_ratio": 0.0166,
+  "patient_overlap_check": "PASSED_ZERO_OVERLAP",
+  "imputation_strategy": "forward_fill_within_stay_then_train_median"
+}

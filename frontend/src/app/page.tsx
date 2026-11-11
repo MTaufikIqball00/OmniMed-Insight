@@ -27,8 +27,10 @@ import {
   Users,
   X,
   XCircle,
+  Zap,
 } from "lucide-react";
 import MedicalImageViewer from "@/components/MedicalImageViewer";
+import IcuEarlyWarningWorkspace from "@/components/IcuEarlyWarningWorkspace";
 import {
   AnalysisJobRecord,
   apiFetch,
@@ -50,6 +52,7 @@ import {
 type NavTab =
   | "overview"
   | "patients"
+  | "icu-early-warning"
   | "workspace"
   | "reports"
   | "fhir"
@@ -1154,6 +1157,11 @@ export default function OmniMedApp() {
               { id: "overview", label: "Overview", icon: Activity },
               { id: "patients", label: "Patients & Cases", icon: Users },
               {
+                id: "icu-early-warning",
+                label: "ICU Early Warning",
+                icon: Zap,
+              },
+              {
                 id: "workspace",
                 label: "Image & XAI Workspace",
                 icon: Brain,
@@ -1860,6 +1868,16 @@ export default function OmniMedApp() {
               </div>
             )}
           </div>
+        )}
+
+        {/* =============================================================== */}
+        {/* TAB: ICU EARLY WARNING & SEPSIS DETERIORATION WORKSPACE         */}
+        {/* =============================================================== */}
+        {activeTab === "icu-early-warning" && (
+          <IcuEarlyWarningWorkspace
+            user={user}
+            onShowNotice={(n) => setBannerNotice(n)}
+          />
         )}
 
         {/* =============================================================== */}

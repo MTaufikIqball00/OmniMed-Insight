@@ -1,0 +1,70 @@
+{
+  "qsofa_clinical_baseline": {
+    "auroc": 0.5548,
+    "auprc": 0.0195,
+    "brier_score": 0.1413,
+    "threshold_used": 0.5,
+    "sensitivity": 0.5385,
+    "specificity": 0.5943,
+    "precision": 0.0219,
+    "f1_score": 0.0422,
+    "confusion_matrix": {
+      "true_negatives": 457,
+      "false_positives": 312,
+      "false_negatives": 6,
+      "true_positives": 7
+    },
+    "model_name": "Clinical qSOFA Baseline (SBP <= 100, RR >= 22)"
+  },
+  "logistic_regression": {
+    "auroc": 0.8308,
+    "auprc": 0.1321,
+    "brier_score": 0.048,
+    "threshold_used": 0.85,
+    "sensitivity": 0.0769,
+    "specificity": 0.9909,
+    "precision": 0.125,
+    "f1_score": 0.0952,
+    "confusion_matrix": {
+      "true_negatives": 762,
+      "false_positives": 7,
+      "false_negatives": 12,
+      "true_positives": 1
+    },
+    "model_name": "L2-Regularized Logistic Regression (Balanced)"
+  },
+  "lightgbm": {
+    "auroc": 0.8663,
+    "auprc": 0.066,
+    "brier_score": 0.0232,
+    "threshold_used": 0.0326,
+    "sensitivity": 1.0,
+    "specificity": 0.5644,
+    "precision": 0.0374,
+    "f1_score": 0.072,
+    "confusion_matrix": {
+      "true_negatives": 434,
+      "false_positives": 335,
+      "false_negatives": 0,
+      "true_positives": 13
+    },
+    "model_name": "LightGBM Gradient Boosted Decision Trees"
+  },
+  "xgboost": {
+    "auroc": 0.9034,
+    "auprc": 0.1076,
+    "brier_score": 0.0215,
+    "threshold_used": 0.08,
+    "sensitivity": 0.9231,
+    "specificity": 0.7139,
+    "precision": 0.0517,
+    "f1_score": 0.098,
+    "confusion_matrix": {
+      "true_negatives": 549,
+      "false_positives": 220,
+      "false_negatives": 1,
+      "true_positives": 12
+    },
+    "model_name": "XGBoost Classifier"
+  }
+}

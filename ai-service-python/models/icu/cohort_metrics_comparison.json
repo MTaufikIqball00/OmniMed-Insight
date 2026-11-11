@@ -1,0 +1,104 @@
+{
+  "qsofa_clinical_baseline": {
+    "auroc": 0.765,
+    "auprc": 0.4283,
+    "brier_score": 0.1582,
+    "threshold_used": 0.35,
+    "sensitivity": 0.6161,
+    "specificity": 0.8966,
+    "precision": 0.5111,
+    "f1_score": 0.5587,
+    "confusion_matrix": {
+      "true_negatives": 572,
+      "false_positives": 66,
+      "false_negatives": 43,
+      "true_positives": 69
+    },
+    "model_name": "Clinical qSOFA Baseline (Score >= 2)"
+  },
+  "logistic_regression": {
+    "auroc": 0.998,
+    "auprc": 0.9921,
+    "brier_score": 0.0078,
+    "threshold_used": 0.6,
+    "sensitivity": 0.9732,
+    "specificity": 0.9953,
+    "precision": 0.9732,
+    "f1_score": 0.9732,
+    "confusion_matrix": {
+      "true_negatives": 635,
+      "false_positives": 3,
+      "false_negatives": 3,
+      "true_positives": 109
+    },
+    "model_name": "L2-Regularized Logistic Regression (Balanced)"
+  },
+  "random_forest": {
+    "auroc": 0.9959,
+    "auprc": 0.9885,
+    "brier_score": 0.0138,
+    "threshold_used": 0.3,
+    "sensitivity": 0.9821,
+    "specificity": 0.989,
+    "precision": 0.9402,
+    "f1_score": 0.9607,
+    "confusion_matrix": {
+      "true_negatives": 631,
+      "false_positives": 7,
+      "false_negatives": 2,
+      "true_positives": 110
+    },
+    "model_name": "Random Forest Classifier (Balanced)"
+  },
+  "lightgbm": {
+    "auroc": 0.9954,
+    "auprc": 0.9864,
+    "brier_score": 0.0111,
+    "threshold_used": 0.35,
+    "sensitivity": 0.9643,
+    "specificity": 0.9922,
+    "precision": 0.9558,
+    "f1_score": 0.96,
+    "confusion_matrix": {
+      "true_negatives": 633,
+      "false_positives": 5,
+      "false_negatives": 4,
+      "true_positives": 108
+    },
+    "model_name": "LightGBM Gradient Boosted Decision Trees"
+  },
+  "xgboost": {
+    "auroc": 0.9945,
+    "auprc": 0.9867,
+    "brier_score": 0.0109,
+    "threshold_used": 0.43,
+    "sensitivity": 0.9732,
+    "specificity": 0.9937,
+    "precision": 0.9646,
+    "f1_score": 0.9689,
+    "confusion_matrix": {
+      "true_negatives": 634,
+      "false_positives": 4,
+      "false_negatives": 3,
+      "true_positives": 109
+    },
+    "model_name": "XGBoost Classifier"
+  },
+  "chf_secondary_endpoint": {
+    "auroc": 0.7176,
+    "auprc": 0.2678,
+    "brier_score": 0.1798,
+    "threshold_used": 0.33,
+    "sensitivity": 0.835,
+    "specificity": 0.5672,
+    "precision": 0.235,
+    "f1_score": 0.3667,
+    "confusion_matrix": {
+      "true_negatives": 367,
+      "false_positives": 280,
+      "false_negatives": 17,
+      "true_positives": 86
+    },
+    "model_name": "Secondary Endpoint: Congestive Heart Failure (CHF)"
+  }
+}

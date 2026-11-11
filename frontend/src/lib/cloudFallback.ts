@@ -1516,6 +1516,198 @@ export async function cloudFallbackRequest<T>(
     return { audit_logs: state.audits } as unknown as T;
   }
 
+  // =========================================================================
+  // ICU Early Warning System Cloud / Offline Fallback Handlers
+  // =========================================================================
+  const fallbackModels = [
+    {
+      id: "model-icu-001",
+      model_id: "icu_sepsis_lgbm_v1",
+      model_name: "OmniMed ICU Sepsis-3 Early Warning (LightGBM + SHAP)",
+      version: "1.0.0-physionet2019",
+      algorithm: "LightGBM Gradient Boosted Decision Trees",
+      target_endpoint: "Sepsis-3 Clinical Deterioration",
+      prediction_horizon: "6-12 hours prior to Sepsis-3 onset",
+      decision_threshold: 0.0326,
+      auroc: 0.8663,
+      auprc: 0.0660,
+      brier_score: 0.0232,
+      sensitivity: 1.0,
+      specificity: 0.5644,
+      f1_score: 0.072,
+      metrics_json: JSON.stringify({
+        qsofa_baseline: { auroc: 0.5548, auprc: 0.0195, brier_score: 0.1413, sensitivity: 0.5385, specificity: 0.5943 },
+        logistic_regression: { auroc: 0.8308, auprc: 0.1321, brier_score: 0.048, sensitivity: 0.7692, specificity: 0.775 },
+        xgboost: { auroc: 0.9034, auprc: 0.1076, brier_score: 0.0215, sensitivity: 0.9231, specificity: 0.7139 },
+        lightgbm: { auroc: 0.8663, auprc: 0.066, brier_score: 0.0232, sensitivity: 1.0, specificity: 0.5644 },
+      }),
+      top_features_json: JSON.stringify([
+        { feature: "Temp_roll6h_std", mean_abs_shap: 0.1338 },
+        { feature: "DBP_roll6h_min", mean_abs_shap: 0.1319 },
+        { feature: "HR_roll6h_min", mean_abs_shap: 0.0853 },
+        { feature: "ShockIndex_roll6h_min", mean_abs_shap: 0.0846 },
+        { feature: "MAP_roll6h_min", mean_abs_shap: 0.0757 },
+      ]),
+      is_active: 1,
+      created_at: "2026-10-25T10:00:00Z",
+    },
+    {
+      id: "model-icu-002",
+      model_id: "icu_sepsis_archive2_cohort_v2",
+      model_name: "OmniMed ICU Sepsis-3 Cohort Model (5,000-Patient Multi-Center Synthetic)",
+      version: "2.0.0-archive2-5k",
+      algorithm: "LightGBM Gradient Boosted Decision Trees (83 Features)",
+      target_endpoint: "Sepsis-3 Clinical Deterioration & Secondary CHF Evaluation",
+      prediction_horizon: "ICU Trajectory & Admission Risk Stratification",
+      decision_threshold: 0.35,
+      auroc: 0.9954,
+      auprc: 0.9864,
+      brier_score: 0.0111,
+      sensitivity: 0.9643,
+      specificity: 0.9922,
+      f1_score: 0.96,
+      metrics_json: JSON.stringify({
+        cohort_size: 5000,
+        sepsis_positive: 750,
+        qsofa_baseline: { auroc: 0.5171, auprc: 0.1574 },
+        logistic_regression: { auroc: 0.9926, auprc: 0.9718, brier_score: 0.0226 },
+        xgboost: { auroc: 0.9936, auprc: 0.9839, brier_score: 0.0124 },
+        lightgbm: { auroc: 0.9954, auprc: 0.9864, brier_score: 0.0111, sensitivity: 0.9643, specificity: 0.9922 },
+        secondary_endpoint_chf: { auroc: 0.7176, auprc: 0.2678, brier_score: 0.1798, sensitivity: 0.835, specificity: 0.5672 },
+      }),
+      top_features_json: JSON.stringify([
+        { feature: "ph_arterial", mean_abs_shap: 0.4795 },
+        { feature: "inr", mean_abs_shap: 0.3385 },
+        { feature: "respiratory_rate_mean", mean_abs_shap: 0.3323 },
+        { feature: "shock_index", mean_abs_shap: 0.3266 },
+        { feature: "spo2_mean", mean_abs_shap: 0.3029 },
+      ]),
+      is_active: 1,
+      created_at: "2026-10-25T10:05:00Z",
+    },
+  ];
+
+  const fallbackStays = [
+    {
+      stay_id: "stay-synth-001",
+      patient_id: "pat-synth-001",
+      mrn: "PT-SYN-001",
+      patient_name: "SYNTHETIC_CASE_ALPHA (Thoracic Cohort)",
+      birth_date: "1968-04-14",
+      sex: "male",
+      icu_unit: "MICU (Medical ICU)",
+      bed_number: "MICU-BED-04",
+      admit_time: "2026-10-25T00:00:00Z",
+      iculos_hours: 12,
+      chief_syndrome: "Pneumonia with ProgressiveTachypnea & Early Sepsis Risk",
+      acuity_status: "DETERIORATING",
+      created_at: "2026-10-25T00:00:00Z",
+      latest_prediction: {
+        id: "pred-synth-001",
+        stay_id: "stay-synth-001",
+        patient_id: "pat-synth-001",
+        requested_by: "usr-clin-001",
+        prediction_time: "2026-10-25T12:00:00Z",
+        prediction_horizon: "6-12 hours",
+        risk_score: 0.482,
+        risk_tier: "HIGH",
+        decision_threshold: 0.0326,
+        model_id: "icu_sepsis_lgbm_v1",
+        model_version: "1.0.0-physionet2019",
+        data_quality_status: "ADEQUATE",
+        stale_warning: null,
+        shap_attributions_json: JSON.stringify([
+          {
+            feature: "ShockIndex_latest",
+            display_name: "Shock Index (HR / SBP)",
+            current_value: 1.244,
+            shap_value: 0.421,
+            direction: "INCREASES_RISK",
+            clinical_rationale: "Elevated Shock Index (>0.9) reflects compensatory tachycardia relative to systolic pressure.",
+          },
+          {
+            feature: "Lactate_latest",
+            display_name: "Serum Lactate (mmol/L)",
+            current_value: 3.3,
+            shap_value: 0.318,
+            direction: "INCREASES_RISK",
+            clinical_rationale: "Elevated serum lactate (>2.0 mmol/L) indicates tissue hypoperfusion.",
+          },
+        ]),
+        vital_summary_json: JSON.stringify({
+          HR: { value: 112.0, unit: "bpm", delta_1h: 2.0 },
+          MAP: { value: 61.0, unit: "mmHg", delta_1h: -2.0 },
+          SBP: { value: 90.0, unit: "mmHg", delta_1h: -3.0 },
+          DBP: { value: 50.0, unit: "mmHg", delta_1h: -1.5 },
+          Resp: { value: 27.5, unit: "breaths/min", delta_1h: 1.0 },
+          O2Sat: { value: 91.5, unit: "%", delta_1h: -0.5 },
+          Temp: { value: 38.9, unit: "degC", delta_1h: 0.14 },
+          Lactate: { value: 3.3, unit: "mmol/L", delta_1h: 0.4 },
+        }),
+        created_at: "2026-10-25T12:00:00Z",
+      },
+      active_alert: null,
+    },
+  ];
+
+  if (pathname === "/api/icu/stays" && method === "GET") {
+    return { stays: fallbackStays } as unknown as T;
+  }
+
+  const icuStayMatch = pathname.match(/^\/api\/icu\/stays\/([^/]+)$/);
+  if (icuStayMatch && method === "GET") {
+    const stay = fallbackStays.find((s) => s.stay_id === icuStayMatch[1]) || fallbackStays[0];
+    return {
+      stay,
+      observations_count: 84,
+      hourly_vitals: Array.from({ length: 12 }, (_, idx) => {
+        const h = idx + 1;
+        return {
+          iculos_hour: h,
+          HR: 88 + h * 2,
+          MAP: 76 - h * 1.2,
+          SBP: 118 - h * 2.2,
+          DBP: 64 - h * 1.1,
+          Resp: 18 + h * 0.8,
+          O2Sat: 96 - h * 0.35,
+          Temp: Number((37.2 + h * 0.14).toFixed(2)),
+          Lactate: h >= 4 ? Number((1.4 + (h - 4) * 0.25).toFixed(2)) : undefined,
+        };
+      }),
+      predictions: stay.latest_prediction ? [stay.latest_prediction] : [],
+      alerts: [],
+      active_model: fallbackModels[0],
+      models: fallbackModels,
+    } as unknown as T;
+  }
+
+  const icuPredictMatch = pathname.match(/^\/api\/icu\/stays\/([^/]+)\/predict$/);
+  if (icuPredictMatch && method === "POST") {
+    const stay = fallbackStays.find((s) => s.stay_id === icuPredictMatch[1]) || fallbackStays[0];
+    return {
+      prediction: stay.latest_prediction,
+      inference_detail: {
+        risk_score: 0.482,
+        risk_tier: "HIGH",
+        shap_attributions: JSON.parse(stay.latest_prediction.shap_attributions_json),
+      },
+      triggered_alert: null,
+    } as unknown as T;
+  }
+
+  if (pathname === "/api/icu/alerts" && method === "GET") {
+    return { alerts: [] } as unknown as T;
+  }
+
+  const icuAckMatch = pathname.match(/^\/api\/icu\/alerts\/([^/]+)\/acknowledge$/);
+  if (icuAckMatch && method === "POST") {
+    return { status: "ACKNOWLEDGED", alert_id: icuAckMatch[1] } as unknown as T;
+  }
+
+  if (pathname === "/api/icu/models" && method === "GET") {
+    return { models: fallbackModels } as unknown as T;
+  }
+
   throw new ApiRequestError(404, "ENDPOINT_NOT_FOUND", `Unhandled endpoint ${pathname}`);
 }
 
