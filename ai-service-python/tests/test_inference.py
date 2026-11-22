@@ -113,17 +113,51 @@ def test_gradcam_and_occlusion_analysis_preserves_source_and_creates_overlay(tmp
 
     # Verify original file was never mutated
     assert hashlib.sha256(cxr_path.read_bytes()).hexdigest() == orig_sha
-    # Verify derived Grad-CAM overlay file exists and matches dimensions
+    # Verify derived Grad-CAM overlay file exists, matches dimensions, and keeps background transparent
     assert overlay_path.is_file()
+    import numpy as np
     with Image.open(overlay_path) as ov:
         assert ov.size == (w, h)
         assert ov.mode == "RGBA"
+        ov_arr = np.asarray(ov)
+        transparent_ratio = float(np.mean(ov_arr[:, :, 3] == 0))
+        assert transparent_ratio >= 0.45, f"Overlay obscures too much scan (transparent={transparent_ratio:.2%})"
+
+    # Verify bounded logits (no BatchNorm variance explosion) and non-negative entropy
+    assert all(abs(c["logit"]) < 50.0 for c in body["class_scores"])
+    assert body["shannon_entropy"] >= 0.0
+    assert not str(body["shannon_entropy"]).startswith("-0")
+    assert body["predicted_class_code"] == "CXR_PARENCHYMAL_OPACITY"
 
     # Verify class probabilities sum to ~1.0 and XAI warnings exist
     prob_sum = sum(c["probability"] for c in body["class_scores"])
     assert pytest.approx(prob_sum, abs=1e-2) == 1.0
     assert "NOT proof" in body["xai"]["clinical_warning"]
     assert len(body["xai"]["top_regions"]) == 4
+
+
+def test_normal_cxr_avoids_massive_red_false_alarm(tmp_path: Path) -> None:
+    normal_path = tmp_path / "normal_cxr.png"
+    generate_synthetic_cxr(normal_path, focal_opacity=False)
+    overlay_path = tmp_path / "normal_gradcam.png"
+
+    resp = client.post(
+        "/internal/v1/analyze",
+        headers=AUTH_HEADERS,
+        json={
+            "job_id": "job-cxr-norm-001",
+            "image_id": "img-cxr-norm-001",
+            "image_path": str(normal_path),
+            "output_overlay_path": str(overlay_path),
+            "modality": "CXR",
+            "body_part": "CHEST",
+            "xai_method": "GRAD_CAM",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["predicted_class_code"] == "CXR_NO_ACUTE_FINDING"
+    assert body["xai"]["active_area_ratio"] <= 0.10
 
 
 def test_mri_gradcam_inference(tmp_path: Path) -> None:
@@ -149,3 +183,5 @@ def test_mri_gradcam_inference(tmp_path: Path) -> None:
     assert body["modality"] == "MRI"
     assert body["image_metadata"]["sha256_digest"] == orig_sha
     assert overlay_path.is_file()
+    assert all(abs(c["logit"]) < 50.0 for c in body["class_scores"])
+    assert body["predicted_class_code"] == "MRI_FLAIR_HYPERINTENSITY"

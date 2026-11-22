@@ -414,48 +414,48 @@ function createInitialSeedState(): CloudDemoState {
           upsampled_resolution: "512x512",
           overlay_sha256:
             "7e21f09a4b8c3d6e51209a8f7c4b2e1d9034a6f8b2c1e5d7a9083b4c6e1f2a90",
-          peak_coords_norm: [0.64, 0.68],
-          active_area_ratio: 0.245,
+          peak_coords_norm: [0.34, 0.67],
+          active_area_ratio: 0.125,
           top_regions: [
             {
               region_name: "Right Lower Zone (RLZ)",
               quadrant_code: "RLZ",
-              mean_attribution: 0.72,
+              mean_attribution: 0.64,
               peak_attribution: 0.96,
-              bbox_norm: [0.5, 0.5, 1.0, 1.0],
+              bbox_norm: [0.0, 0.5, 0.5, 1.0],
             },
             {
               region_name: "Right Upper Zone (RUZ)",
               quadrant_code: "RUZ",
-              mean_attribution: 0.34,
-              peak_attribution: 0.58,
-              bbox_norm: [0.5, 0.0, 1.0, 0.5],
+              mean_attribution: 0.14,
+              peak_attribution: 0.31,
+              bbox_norm: [0.0, 0.0, 0.5, 0.5],
             },
             {
               region_name: "Left Lower Zone (LLZ)",
               quadrant_code: "LLZ",
-              mean_attribution: 0.19,
-              peak_attribution: 0.39,
-              bbox_norm: [0.0, 0.5, 0.5, 1.0],
+              mean_attribution: 0.08,
+              peak_attribution: 0.18,
+              bbox_norm: [0.5, 0.5, 1.0, 1.0],
             },
             {
               region_name: "Left Upper Zone (LUZ)",
               quadrant_code: "LUZ",
-              mean_attribution: 0.11,
-              peak_attribution: 0.24,
-              bbox_norm: [0.0, 0.0, 0.5, 0.5],
+              mean_attribution: 0.05,
+              peak_attribution: 0.11,
+              bbox_norm: [0.5, 0.0, 1.0, 0.5],
             },
           ],
           color_scale_legend: {
-            "0.00_0.25": "Low / Minimal Attribution (Transparent Cool Blue)",
-            "0.25_0.50": "Moderate Feature Weighting (Cyan / Green)",
-            "0.50_0.75": "Elevated Spatial Attribution (Amber / Yellow)",
-            "0.75_1.00": "Peak Gradient Attribution (Crimson Red)",
+            "0.00_0.23": "Transparent Background (No Focus)",
+            "0.24_0.49": "Low-to-Moderate Weight (Cyan / Green)",
+            "0.50_0.74": "Elevated Spatial Attribution (Yellow / Orange)",
+            "0.75_1.00": "Peak Gradient Focus (Red Core)",
           },
           clinical_warning:
             "Grad-CAM highlights spatial feature importance from convolutional layer 'features.denseblock4.denselayer16.conv2', NOT confirmed anatomical pathology boundaries.",
           localization_limitation:
-            "Coarse 7x7 feature maps upsampled to 512x512 cannot resolve sub-millimeter lesions or replace radiologist visual inspection.",
+            "Coarse 7x7 feature maps upsampled smoothly to 512x512 cannot resolve sub-millimeter lesions or replace radiologist visual inspection.",
         }),
         overlay_sha256:
           "7e21f09a4b8c3d6e51209a8f7c4b2e1d9034a6f8b2c1e5d7a9083b4c6e1f2a90",
@@ -1133,37 +1133,91 @@ export async function cloudFallbackRequest<T>(
     const imageId = String(body.image_id || state.images.find((i) => i.case_id === caseId)?.id || "");
     const xaiMethod = String(body.xai_method || "GRAD_CAM");
     const isMri = c.modality === "MRI";
+    const newJobId = `job-${Date.now()}`;
+    const uploadedUrl = state.uploadedImageDataUrls[imageId];
+
+    // If user uploaded an image in cloud demo mode, analyze real pixel distribution on HTML5 Canvas
+    const canvasAnalysis = uploadedUrl
+      ? await analyzeUploadedImageOnCanvas(uploadedUrl, isMri ? "MRI" : "CXR")
+      : null;
+
+    if (canvasAnalysis?.overlayDataUrl) {
+      state.uploadedImageDataUrls[`overlay-${newJobId}`] = canvasAnalysis.overlayDataUrl;
+    }
 
     const now = new Date().toISOString();
+    const topProb = canvasAnalysis ? canvasAnalysis.topProb : isMri ? 0.742 : 0.784;
+    const entropy = canvasAnalysis ? canvasAnalysis.entropy : isMri ? 0.731 : 0.682;
+    const uncLevel: "LOW" | "MODERATE" | "HIGH_UNCERTAINTY" =
+      topProb < 0.48 || entropy > 1.65 ? "HIGH_UNCERTAINTY" : topProb < 0.68 ? "MODERATE" : "LOW";
+
+    const predCode = canvasAnalysis
+      ? canvasAnalysis.predCode
+      : isMri
+      ? "WHITE_MATTER_FLAIR_HYPERINTENSITY"
+      : "FOCAL_CONSOLIDATION_PATTERN";
+    const predLabel = canvasAnalysis
+      ? canvasAnalysis.predLabel
+      : isMri
+      ? "Focal Periventricular / Subcortical Hyperintensity Pattern"
+      : "Focal Alveolar / Interstitial Opacity Pattern";
+
+    const defaultRegions = isMri
+      ? [
+          { region_name: "Left Posterior Cerebral Zone (LPQ)", quadrant_code: "LPQ", mean_attribution: 0.58, peak_attribution: 0.94, bbox_norm: [0.5, 0.5, 1.0, 1.0] },
+          { region_name: "Left Anterior Cerebral Zone (LAQ)", quadrant_code: "LAQ", mean_attribution: 0.16, peak_attribution: 0.34, bbox_norm: [0.5, 0.0, 1.0, 0.5] },
+          { region_name: "Right Posterior Cerebral Zone (RPQ)", quadrant_code: "RPQ", mean_attribution: 0.09, peak_attribution: 0.21, bbox_norm: [0.0, 0.5, 0.5, 1.0] },
+          { region_name: "Right Anterior Cerebral Zone (RAQ)", quadrant_code: "RAQ", mean_attribution: 0.06, peak_attribution: 0.14, bbox_norm: [0.0, 0.0, 0.5, 0.5] },
+        ]
+      : JSON.parse(state.jobs[0].xai_metadata_json).top_regions;
+
+    const peakCoords = canvasAnalysis
+      ? canvasAnalysis.peakCoords
+      : isMri
+      ? [0.62, 0.43]
+      : [0.34, 0.67];
+    const activeArea = canvasAnalysis ? canvasAnalysis.activeArea : isMri ? 0.118 : 0.125;
+
+    const classScores = canvasAnalysis
+      ? canvasAnalysis.classScores
+      : isMri
+      ? [
+          { class_index: 1, class_code: "WHITE_MATTER_FLAIR_HYPERINTENSITY", class_label: "Focal Periventricular / Subcortical Hyperintensity Pattern", probability: 0.742, logit: 1.85, snomed_code: "414786004", loinc_code: "24590-2" },
+          { class_index: 0, class_code: "NO_ACUTE_PARENCHYMAL_LESION", class_label: "No Focal Hyperintense Mass or Midline Shift", probability: 0.141, logit: 0.21, snomed_code: "260413007", loinc_code: "24590-2" },
+          { class_index: 2, class_code: "MASS_EFFECT_EDEMA", class_label: "Circumscribed Space-Occupying Lesion with Edema", probability: 0.079, logit: -0.35, snomed_code: "301867009", loinc_code: "24590-2" },
+          { class_index: 3, class_code: "VENTRICULAR_ASYMMETRY", class_label: "Ventricular Enlargement / Asymmetry Pattern", probability: 0.038, logit: -1.10, snomed_code: "61387006", loinc_code: "24590-2" },
+        ]
+      : JSON.parse(state.jobs[0].class_scores_json);
+
     const newJob: AnalysisJobRecord = {
-      id: `job-${Date.now()}`,
+      id: newJobId,
       case_id: caseId,
       image_id: imageId,
       requested_by: currentUser.id,
       model_id: "omnimed-densenet121-multimodal",
-      model_version: "densenet121-torchvision-v0.19+xai-1.0 (Cloud Demo)",
+      model_version: "densenet121-torchvision-v0.19+xai-1.1 (Cloud Demo)",
       xai_method: xaiMethod,
       status: "COMPLETED",
       calibration_status: "RESEARCH_UNVERIFIED",
-      execution_device: "cpu (cloud-demo-fallback)",
-      predicted_class_code: isMri
-        ? "WHITE_MATTER_FLAIR_HYPERINTENSITY"
-        : "FOCAL_CONSOLIDATION_PATTERN",
-      predicted_class_label: isMri
-        ? "Focal Periventricular / Subcortical Hyperintensity Pattern"
-        : "Focal Alveolar / Interstitial Opacity Pattern",
-      predicted_probability: isMri ? 0.742 : 0.812,
-      shannon_entropy: isMri ? 0.731 : 0.641,
-      uncertainty_level: "LOW",
+      execution_device: canvasAnalysis ? "browser-canvas-saliency (cloud-fallback)" : "cpu (cloud-demo-fallback)",
+      predicted_class_code: predCode,
+      predicted_class_label: predLabel,
+      predicted_probability: topProb,
+      shannon_entropy: entropy,
+      uncertainty_level: uncLevel,
       uncertainty_reason:
-        "Normalized Shannon entropy is within low-uncertainty bounds for convolutional attribution.",
-      class_scores_json: state.jobs[0].class_scores_json,
+        uncLevel === "LOW"
+          ? `Distinct focal contrast activation (entropy ${entropy.toFixed(2)}/2.00 bits), subject to research calibration limits.`
+          : `Moderate/elevated spread across patterns (entropy ${entropy.toFixed(2)}/2.00 bits); inspect scan carefully.`,
+      class_scores_json: JSON.stringify(classScores),
       xai_metadata_json: JSON.stringify({
         ...JSON.parse(state.jobs[0].xai_metadata_json),
         method: xaiMethod,
-        explained_class_label: isMri
-          ? "Focal Periventricular / Subcortical Hyperintensity Pattern"
-          : "Focal Alveolar / Interstitial Opacity Pattern",
+        explained_class_code: predCode,
+        explained_class_label: predLabel,
+        peak_coords_norm: peakCoords,
+        active_area_ratio: activeArea,
+        top_regions: canvasAnalysis ? canvasAnalysis.topRegions : defaultRegions,
       }),
       overlay_sha256:
         "7e21f09a4b8c3d6e51209a8f7c4b2e1d9034a6f8b2c1e5d7a9083b4c6e1f2a90",
@@ -1649,10 +1703,18 @@ export async function cloudFallbackRequest<T>(
             direction: "INCREASES_RISK",
             clinical_rationale: "Fever indicates systemic inflammatory response to infection.",
           },
+          {
+            feature: "MAP_latest",
+            display_name: "Mean Arterial Pressure (mmHg)",
+            current_value: 66.0,
+            shap_value: -0.112,
+            direction: "DECREASES_RISK",
+            clinical_rationale: "MAP stays just above critical hypoperfusion floor (>= 65 mmHg), moderately buffering shock risk.",
+          },
         ]),
         vital_summary_json: JSON.stringify({
           HR: { value: 112.0, unit: "bpm", delta_1h: 2.0 },
-          MAP: { value: 61.0, unit: "mmHg", delta_1h: -2.0 },
+          MAP: { value: 66.0, unit: "mmHg", delta_1h: -2.0 },
           SBP: { value: 90.0, unit: "mmHg", delta_1h: -3.0 },
           DBP: { value: 50.0, unit: "mmHg", delta_1h: -1.5 },
           Resp: { value: 27.5, unit: "breaths/min", delta_1h: 1.0 },
@@ -1700,6 +1762,14 @@ export async function cloudFallbackRequest<T>(
             shap_value: -0.312,
             direction: "DECREASES_RISK",
             clinical_rationale: "Normal Shock Index (<0.7) reflects hemodynamically stable cardiac output.",
+          },
+          {
+            feature: "Lactate_latest",
+            display_name: "Serum Lactate (mmol/L)",
+            current_value: 1.1,
+            shap_value: -0.215,
+            direction: "DECREASES_RISK",
+            clinical_rationale: "Normal serum lactate (<= 2.0 mmol/L) indicates adequate tissue oxygenation.",
           },
         ]),
         vital_summary_json: JSON.stringify({
@@ -1760,6 +1830,14 @@ export async function cloudFallbackRequest<T>(
             direction: "INCREASES_RISK",
             clinical_rationale: "Severe tachycardia relative to hypotension indicates decompensated shock.",
           },
+          {
+            feature: "MAP_latest",
+            display_name: "Mean Arterial Pressure (mmHg)",
+            current_value: 52.0,
+            shap_value: 0.438,
+            direction: "INCREASES_RISK",
+            clinical_rationale: "MAP < 65 mmHg compromises vital organ perfusion pressure.",
+          },
         ]),
         vital_summary_json: JSON.stringify({
           HR: { value: 126.0, unit: "bpm", delta_1h: 4.0 },
@@ -1813,7 +1891,7 @@ export async function cloudFallbackRequest<T>(
       const isDeteriorating = stay.stay_id === "stay-synth-001";
 
       const hrVal = isCritical ? 98 + h * 2.8 : (isDeteriorating ? 88 + h * 2.0 : 72 + (h % 3));
-      const mapVal = isCritical ? 72 - h * 2.0 : (isDeteriorating ? 76 - h * 1.2 : 88 - (h % 2));
+      const mapVal = isCritical ? 72 - h * 2.0 : (isDeteriorating ? 78 - h * 1.0 : 88 - (h % 2));
       const sbpVal = isCritical ? 112 - h * 3.2 : (isDeteriorating ? 118 - h * 2.3 : 122 - (h % 3));
       const dbpVal = isCritical ? 58 - h * 1.5 : (isDeteriorating ? 64 - h * 1.1 : 72 - (h % 2));
       const respVal = isCritical ? 20 + h * 1.2 : (isDeteriorating ? 18 + h * 0.8 : 15 + (h % 2));
@@ -1849,12 +1927,19 @@ export async function cloudFallbackRequest<T>(
   const icuPredictMatch = pathname.match(/^\/api\/icu\/stays\/([^/]+)\/predict$/);
   if (icuPredictMatch && method === "POST") {
     const stay = fallbackStays.find((s) => s.stay_id === icuPredictMatch[1]) || fallbackStays[0];
+    const score = stay.latest_prediction?.risk_score || 0.482;
+    const tier = stay.latest_prediction?.risk_tier || "HIGH";
     return {
-      prediction_id: stay.latest_prediction?.id || "pred-demo",
-      risk_score: stay.latest_prediction?.risk_score || 0.482,
-      risk_tier: stay.latest_prediction?.risk_tier || "HIGH",
+      prediction_id: `pred-${Date.now()}`,
+      risk_score: score,
+      risk_tier: tier,
       prediction_horizon: "6-12 hours",
-      prediction: stay.latest_prediction,
+      prediction: {
+        ...stay.latest_prediction,
+        id: `pred-${Date.now()}`,
+        prediction_time: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      },
     } as unknown as T;
   }
 
@@ -1891,8 +1976,16 @@ export async function cloudFallbackImageBlobUrl(path: string): Promise<string> {
   const overlayMatch = path.match(/^\/api\/jobs\/([^/]+)\/overlay$/);
   if (overlayMatch) {
     const jobId = overlayMatch[1];
+    if (state.uploadedImageDataUrls[`overlay-${jobId}`]) {
+      return state.uploadedImageDataUrls[`overlay-${jobId}`];
+    }
     const job = state.jobs.find((j) => j.id === jobId);
     const imgRecord = state.images.find((i) => i.id === job?.image_id);
+    if (job?.image_id && state.uploadedImageDataUrls[job.image_id]) {
+      const mod = imgRecord?.modality === "MRI" ? "MRI" : "CXR";
+      const analyzed = await analyzeUploadedImageOnCanvas(state.uploadedImageDataUrls[job.image_id], mod);
+      if (analyzed?.overlayDataUrl) return analyzed.overlayDataUrl;
+    }
     const isMri = imgRecord?.modality === "MRI";
     return generateSyntheticMedicalCanvasDataUrl(isMri ? "MRI" : "CXR", true);
   }
@@ -1912,12 +2005,10 @@ function generateSyntheticMedicalCanvasDataUrl(
   if (!ctx) return "";
 
   if (!isOverlay) {
-    // High-contrast synthetic phantom radiograph / axial FLAIR
     ctx.fillStyle = "#060a12";
     ctx.fillRect(0, 0, 512, 512);
 
     if (modality === "CXR") {
-      // Thoracic cage & lung fields
       const bgGrad = ctx.createRadialGradient(256, 256, 30, 256, 256, 245);
       bgGrad.addColorStop(0, "#334155");
       bgGrad.addColorStop(0.7, "#1e293b");
@@ -1925,7 +2016,7 @@ function generateSyntheticMedicalCanvasDataUrl(
       ctx.fillStyle = bgGrad;
       ctx.fillRect(28, 28, 456, 456);
 
-      // Right and Left Lung Fields (dark radiolucent)
+      // Right and Left Lung Fields (viewer-left = Patient Right Lung)
       ctx.fillStyle = "#0b1322";
       ctx.beginPath();
       ctx.ellipse(175, 240, 78, 145, 0.08, 0, Math.PI * 2);
@@ -1945,17 +2036,16 @@ function generateSyntheticMedicalCanvasDataUrl(
       ctx.arc(268, 295, 85, 0, Math.PI * 2);
       ctx.fill();
 
-      // Focal consolidation phantom in Right Lower Zone (viewer's lower-right / anatomical RLZ)
-      const lesionGrad = ctx.createRadialGradient(328, 348, 8, 328, 348, 62);
-      lesionGrad.addColorStop(0, "rgba(226, 232, 240, 0.82)");
+      // Focal consolidation phantom in Right Lower Zone (viewer's lower-left / anatomical RLZ)
+      const lesionGrad = ctx.createRadialGradient(175, 344, 6, 175, 344, 54);
+      lesionGrad.addColorStop(0, "rgba(226, 232, 240, 0.85)");
       lesionGrad.addColorStop(0.5, "rgba(148, 163, 184, 0.45)");
       lesionGrad.addColorStop(1, "rgba(15, 23, 42, 0)");
       ctx.fillStyle = lesionGrad;
       ctx.beginPath();
-      ctx.arc(328, 348, 62, 0, Math.PI * 2);
+      ctx.arc(175, 344, 54, 0, Math.PI * 2);
       ctx.fill();
 
-      // Rib arcs
       ctx.strokeStyle = "rgba(203, 213, 225, 0.18)";
       ctx.lineWidth = 4;
       for (let i = 0; i < 6; i++) {
@@ -1968,7 +2058,6 @@ function generateSyntheticMedicalCanvasDataUrl(
         ctx.stroke();
       }
     } else {
-      // Axial Brain MRI Phantom
       ctx.fillStyle = "#1e293b";
       ctx.beginPath();
       ctx.ellipse(256, 256, 175, 210, 0, 0, Math.PI * 2);
@@ -1979,7 +2068,6 @@ function generateSyntheticMedicalCanvasDataUrl(
       ctx.ellipse(256, 256, 158, 192, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Ventricles
       ctx.fillStyle = "#0f172a";
       ctx.beginPath();
       ctx.ellipse(235, 245, 16, 48, -0.2, 0, Math.PI * 2);
@@ -1988,7 +2076,6 @@ function generateSyntheticMedicalCanvasDataUrl(
       ctx.ellipse(277, 245, 16, 48, 0.2, 0, Math.PI * 2);
       ctx.fill();
 
-      // FLAIR hyperintensity phantom
       const flairGrad = ctx.createRadialGradient(318, 220, 4, 318, 220, 36);
       flairGrad.addColorStop(0, "rgba(248, 250, 252, 0.95)");
       flairGrad.addColorStop(0.5, "rgba(203, 213, 225, 0.5)");
@@ -2007,19 +2094,253 @@ function generateSyntheticMedicalCanvasDataUrl(
       494
     );
   } else {
-    // Grad-CAM Thermal Overlay (transparent background + JET/Turbo heatmap)
+    // Focused translucent Grad-CAM thermal hotspot (leaves >80% of anatomy clear)
     ctx.clearRect(0, 0, 512, 512);
-    const cx = modality === "CXR" ? 328 : 318;
-    const cy = modality === "CXR" ? 348 : 220;
-    const heat = ctx.createRadialGradient(cx, cy, 6, cx, cy, 115);
-    heat.addColorStop(0, "rgba(239, 68, 68, 0.92)");
-    heat.addColorStop(0.32, "rgba(245, 158, 11, 0.78)");
-    heat.addColorStop(0.62, "rgba(16, 185, 129, 0.48)");
-    heat.addColorStop(0.85, "rgba(56, 189, 248, 0.22)");
+    const cx = modality === "CXR" ? 175 : 318;
+    const cy = modality === "CXR" ? 344 : 220;
+    const rad = modality === "CXR" ? 74 : 62;
+    const heat = ctx.createRadialGradient(cx, cy, 4, cx, cy, rad);
+    heat.addColorStop(0, "rgba(239, 68, 68, 0.72)");
+    heat.addColorStop(0.32, "rgba(245, 158, 11, 0.54)");
+    heat.addColorStop(0.62, "rgba(34, 197, 94, 0.28)");
+    heat.addColorStop(0.85, "rgba(56, 189, 248, 0.12)");
     heat.addColorStop(1, "rgba(0, 0, 0, 0)");
     ctx.fillStyle = heat;
     ctx.fillRect(0, 0, 512, 512);
   }
 
   return canvas.toDataURL("image/png");
+}
+
+async function analyzeUploadedImageOnCanvas(
+  dataUrl: string,
+  modality: "CXR" | "MRI"
+): Promise<{
+  overlayDataUrl: string;
+  peakCoords: [number, number];
+  activeArea: number;
+  predCode: string;
+  predLabel: string;
+  topProb: number;
+  entropy: number;
+  topRegions: Array<{
+    region_name: string;
+    quadrant_code: string;
+    mean_attribution: number;
+    peak_attribution: number;
+    bbox_norm: number[];
+  }>;
+  classScores: Array<{
+    class_index: number;
+    class_code: string;
+    class_label: string;
+    probability: number;
+    logit: number;
+    snomed_code: string;
+    loinc_code: string;
+  }>;
+} | null> {
+  if (typeof document === "undefined" || typeof Image === "undefined") return null;
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = dataUrl;
+    });
+
+    const G = 14;
+    const work = document.createElement("canvas");
+    work.width = G;
+    work.height = G;
+    const wctx = work.getContext("2d");
+    if (!wctx) return null;
+    wctx.drawImage(img, 0, 0, G, G);
+    const px = wctx.getImageData(0, 0, G, G).data;
+
+    const lum: number[][] = [];
+    for (let y = 0; y < G; y++) {
+      const row: number[] = [];
+      for (let x = 0; x < G; x++) {
+        const idx = (y * G + x) * 4;
+        row.push((0.299 * px[idx] + 0.587 * px[idx + 1] + 0.114 * px[idx + 2]) / 255);
+      }
+      lum.push(row);
+    }
+
+    // 7x7 parenchymal anomaly score (local contrast + contralateral asymmetry, excluding spine/border)
+    const cam7: number[][] = Array.from({ length: 7 }, () => Array(7).fill(0));
+    let maxAnom = 0;
+    let peakX = 0.5;
+    let peakY = 0.5;
+    let peakVal = -1;
+
+    for (let r = 1; r < 6; r++) {
+      for (let c = 1; c < 6; c++) {
+        if (modality === "CXR" && c === 3) continue; // skip spine band
+        let bestCell = 0;
+        for (let dy = 0; dy < 2; dy++) {
+          for (let dx = 0; dx < 2; dx++) {
+            const yy = r * 2 + dy;
+            const xx = c * 2 + dx;
+            const val = lum[yy][xx];
+            const mir = lum[yy][G - 1 - xx];
+            let neigh = 0;
+            let cnt = 0;
+            for (let ky = -1; ky <= 1; ky++) {
+              for (let kx = -1; kx <= 1; kx++) {
+                const ny = yy + ky;
+                const nx = xx + kx;
+                if (ny >= 0 && ny < G && nx >= 0 && nx < G) {
+                  neigh += lum[ny][nx];
+                  cnt++;
+                }
+              }
+            }
+            const focal = Math.max(0, val - neigh / Math.max(1, cnt));
+            const asym = Math.max(0, val - mir);
+            let maskW = 1.0;
+            if (modality === "CXR" && c === 4 && r >= 4) maskW = 0.35; // cardiac border damp
+            const sc = (0.65 * asym + 1.5 * focal) * maskW;
+            if (sc > bestCell) bestCell = sc;
+          }
+        }
+        cam7[r][c] = bestCell;
+        if (bestCell > maxAnom) {
+          maxAnom = bestCell;
+        }
+        if (bestCell > peakVal) {
+          peakVal = bestCell;
+          peakX = (c + 0.5) / 7;
+          peakY = (r + 0.5) / 7;
+        }
+      }
+    }
+
+    const normScale = maxAnom > 1e-4 ? maxAnom : 1;
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        cam7[r][c] = Math.pow(Math.min(1, cam7[r][c] / normScale), 1.3);
+      }
+    }
+
+    // Draw smooth overlay canvas (512x512 with radial thermal focus at top activations)
+    const outW = 512;
+    const outH = 512;
+    const ov = document.createElement("canvas");
+    ov.width = outW;
+    ov.height = outH;
+    const octx = ov.getContext("2d");
+    if (!octx) return null;
+    octx.clearRect(0, 0, outW, outH);
+
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        const w = cam7[r][c];
+        if (w < 0.28) continue;
+        const cx = ((c + 0.5) / 7) * outW;
+        const cy = ((r + 0.5) / 7) * outH;
+        const rad = 68;
+        const g = octx.createRadialGradient(cx, cy, 4, cx, cy, rad);
+        const aMax = Math.min(0.68, ((w - 0.25) / 0.75) * 0.68);
+        g.addColorStop(0, `rgba(239, 68, 68, ${aMax.toFixed(2)})`);
+        g.addColorStop(0.4, `rgba(245, 158, 11, ${(aMax * 0.68).toFixed(2)})`);
+        g.addColorStop(0.75, `rgba(56, 189, 248, ${(aMax * 0.28).toFixed(2)})`);
+        g.addColorStop(1, "rgba(0, 0, 0, 0)");
+        octx.fillStyle = g;
+        octx.beginPath();
+        octx.arc(cx, cy, rad, 0, Math.PI * 2);
+        octx.fill();
+      }
+    }
+
+    const qStats = (r0: number, r1: number, c0: number, c1: number) => {
+      let sum = 0;
+      let mx = 0;
+      let n = 0;
+      for (let r = r0; r < r1; r++) {
+        for (let c = c0; c < c1; c++) {
+          sum += cam7[r][c];
+          if (cam7[r][c] > mx) mx = cam7[r][c];
+          n++;
+        }
+      }
+      return { mean: Number((sum / Math.max(1, n)).toFixed(2)), peak: Number(mx.toFixed(2)) };
+    };
+
+    const q0 = qStats(0, 3, 0, 3);
+    const q1 = qStats(0, 3, 4, 7);
+    const q2 = qStats(3, 7, 0, 3);
+    const q3 = qStats(3, 7, 4, 7);
+    const topRegions =
+      modality === "CXR"
+        ? [
+            { region_name: "Right Upper Zone (RUZ)", quadrant_code: "RUZ", mean_attribution: q0.mean, peak_attribution: q0.peak, bbox_norm: [0, 0, 0.5, 0.5] },
+            { region_name: "Left Upper Zone (LUZ)", quadrant_code: "LUZ", mean_attribution: q1.mean, peak_attribution: q1.peak, bbox_norm: [0.5, 0, 1, 0.5] },
+            { region_name: "Right Lower Zone (RLZ)", quadrant_code: "RLZ", mean_attribution: q2.mean, peak_attribution: q2.peak, bbox_norm: [0, 0.5, 0.5, 1] },
+            { region_name: "Left Lower Zone (LLZ)", quadrant_code: "LLZ", mean_attribution: q3.mean, peak_attribution: q3.peak, bbox_norm: [0.5, 0.5, 1, 1] },
+          ].sort((a, b) => b.mean_attribution - a.mean_attribution)
+        : [
+            { region_name: "Right Anterior Cerebral (RAQ)", quadrant_code: "RAQ", mean_attribution: q0.mean, peak_attribution: q0.peak, bbox_norm: [0, 0, 0.5, 0.5] },
+            { region_name: "Left Anterior Cerebral (LAQ)", quadrant_code: "LAQ", mean_attribution: q1.mean, peak_attribution: q1.peak, bbox_norm: [0.5, 0, 1, 0.5] },
+            { region_name: "Right Posterior Cerebral (RPQ)", quadrant_code: "RPQ", mean_attribution: q2.mean, peak_attribution: q2.peak, bbox_norm: [0, 0.5, 0.5, 1] },
+            { region_name: "Left Posterior Cerebral (LPQ)", quadrant_code: "LPQ", mean_attribution: q3.mean, peak_attribution: q3.peak, bbox_norm: [0.5, 0.5, 1, 1] },
+          ].sort((a, b) => b.mean_attribution - a.mean_attribution);
+
+    const activeCount = cam7.flat().filter((v) => v >= 0.48).length;
+    const activeArea = Number((activeCount / 49).toFixed(3));
+    const hasFocal = maxAnom > 0.14;
+    const l0 = hasFocal ? 0.1 : 1.5;
+    const l1 = hasFocal ? 1.85 + maxAnom * 2.5 : 0.25;
+    const l2 = hasFocal ? 0.65 : -0.35;
+    const l3 = 0.05;
+    const rawLogits = [l0, l1, l2, l3];
+    const exps = rawLogits.map((v) => Math.exp(v));
+    const sExp = exps.reduce((a, b) => a + b, 0);
+    const probs = exps.map((e) => e / sExp);
+    const entropy = Number(
+      Math.max(0, -probs.reduce((acc, p) => acc + p * Math.log2(Math.max(p, 1e-9)), 0)).toFixed(4)
+    );
+
+    const catalog =
+      modality === "CXR"
+        ? [
+            { code: "NO_ACUTE_OPACITY", label: "No Focal Consolidation or Effusion Pattern", snomed: "260413007", loinc: "36643-5" },
+            { code: "FOCAL_CONSOLIDATION_PATTERN", label: "Focal Alveolar / Interstitial Opacity Pattern", snomed: "95436008", loinc: "LP199959-0" },
+            { code: "PLEURAL_CARDIOMEDIASTINAL_SHIFT", label: "Pleural Effusion / Basilar Blunting Pattern", snomed: "60046008", loinc: "LP199974-9" },
+            { code: "CXR_CARDIOMEGALY_BORDERLINE", label: "Cardiothoracic Silhouette Enlargement Pattern", snomed: "8186001", loinc: "36643-5" },
+          ]
+        : [
+            { code: "NO_ACUTE_PARENCHYMAL_LESION", label: "No Focal Hyperintense Mass or Midline Shift", snomed: "260413007", loinc: "24590-2" },
+            { code: "WHITE_MATTER_FLAIR_HYPERINTENSITY", label: "Focal Periventricular / Cortical Hyperintensity Pattern", snomed: "414786004", loinc: "24590-2" },
+            { code: "MASS_EFFECT_EDEMA", label: "Circumscribed Space-Occupying Lesion with Edema", snomed: "301867009", loinc: "24590-2" },
+            { code: "VENTRICULAR_ASYMMETRY", label: "Ventricular Enlargement / Asymmetry Pattern", snomed: "61387006", loinc: "24590-2" },
+          ];
+
+    const classScores = catalog
+      .map((item, idx) => ({
+        class_index: idx,
+        class_code: item.code,
+        class_label: item.label,
+        probability: Number(probs[idx].toFixed(4)),
+        logit: Number(rawLogits[idx].toFixed(2)),
+        snomed_code: item.snomed,
+        loinc_code: item.loinc,
+      }))
+      .sort((a, b) => b.probability - a.probability);
+
+    return {
+      overlayDataUrl: ov.toDataURL("image/png"),
+      peakCoords: [Number(peakX.toFixed(2)), Number(peakY.toFixed(2))],
+      activeArea,
+      predCode: classScores[0].class_code,
+      predLabel: classScores[0].class_label,
+      topProb: classScores[0].probability,
+      entropy,
+      topRegions,
+      classScores,
+    };
+  } catch {
+    return null;
+  }
 }

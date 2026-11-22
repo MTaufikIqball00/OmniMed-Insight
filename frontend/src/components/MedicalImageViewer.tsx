@@ -3,8 +3,11 @@
 import React, { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  Columns,
+  Crosshair,
   Eye,
   EyeOff,
+  HelpCircle,
   Layers,
   Maximize2,
   RefreshCw,
@@ -34,8 +37,11 @@ export default function MedicalImageViewer({
   const [loadingImage, setLoadingImage] = useState<boolean>(true);
   const [imageError, setImageError] = useState<string | null>(null);
 
-  const [showOverlay, setShowOverlay] = useState<boolean>(true);
-  const [overlayOpacity, setOverlayOpacity] = useState<number>(65);
+  const [viewMode, setViewMode] = useState<"overlay" | "split" | "original">(
+    "overlay"
+  );
+  const [overlayOpacity, setOverlayOpacity] = useState<number>(48);
+  const [showPeakMarker, setShowPeakMarker] = useState<boolean>(true);
   const [zoom, setZoom] = useState<number>(100);
   const [panX, setPanX] = useState<number>(0);
   const [panY, setPanY] = useState<number>(0);
@@ -104,7 +110,17 @@ export default function MedicalImageViewer({
     setPanX(0);
     setPanY(0);
     setInvertLut(false);
+    setOverlayOpacity(48);
   };
+
+  const showOverlay = viewMode !== "original" && Boolean(overlayBlobUrl);
+  const peakX = xaiMeta?.peak_coords_norm?.[0];
+  const peakY = xaiMeta?.peak_coords_norm?.[1];
+  const hasPeakCoords =
+    typeof peakX === "number" &&
+    typeof peakY === "number" &&
+    !isNaN(peakX) &&
+    !isNaN(peakY);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -167,56 +183,92 @@ export default function MedicalImageViewer({
           </button>
 
           {overlayBlobUrl && (
-            <button
-              type="button"
-              onClick={() => setShowOverlay((s) => !s)}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                showOverlay
-                  ? "bg-sky-500 text-white"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-              }`}
-            >
-              {showOverlay ? (
-                <>
-                  <Eye className="h-3.5 w-3.5" />
-                  XAI Heatmap ON
-                </>
-              ) : (
-                <>
-                  <EyeOff className="h-3.5 w-3.5" />
-                  Unaltered Original Only
-                </>
-              )}
-            </button>
+            <div className="inline-flex rounded-lg bg-slate-800 p-0.5 border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setViewMode("overlay")}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                  viewMode === "overlay"
+                    ? "bg-sky-500 text-white"
+                    : "text-slate-300 hover:text-white"
+                }`}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Overlay
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("split")}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                  viewMode === "split"
+                    ? "bg-sky-500 text-white"
+                    : "text-slate-300 hover:text-white"
+                }`}
+                title="Bandingkan Foto Asli vs Peta Fokus AI berdampingan"
+              >
+                <Columns className="h-3.5 w-3.5" />
+                Bandingkan
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("original")}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                  viewMode === "original"
+                    ? "bg-amber-500 text-slate-950"
+                    : "text-slate-300 hover:text-white"
+                }`}
+                title="Tampilkan foto asli murni tanpa warna XAI"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                Asli Saja
+              </button>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Overlay Opacity & Pan Controls Bar */}
+      {/* Overlay Opacity, Crosshair & Pan Controls Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-slate-100 px-4 py-2.5 text-xs text-slate-700">
-        <div className="flex items-center gap-3">
-          <Layers className="h-4 w-4 text-sky-700" />
-          <label htmlFor="xai-opacity-slider" className="font-medium">
-            Grad-CAM Overlay Opacity:
-          </label>
-          <input
-            id="xai-opacity-slider"
-            type="range"
-            min={0}
-            max={100}
-            value={overlayOpacity}
-            disabled={!overlayBlobUrl || !showOverlay}
-            onChange={(e) => setOverlayOpacity(Number(e.target.value))}
-            className="h-2 w-32 cursor-pointer accent-sky-600 disabled:opacity-40"
-          />
-          <span className="font-mono font-semibold text-slate-900">
-            {showOverlay && overlayBlobUrl ? `${overlayOpacity}%` : "0% (Hidden)"}
-          </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-sky-700" />
+            <label htmlFor="xai-opacity-slider" className="font-medium">
+              Transparansi Warna XAI:
+            </label>
+            <input
+              id="xai-opacity-slider"
+              type="range"
+              min={0}
+              max={100}
+              value={overlayOpacity}
+              disabled={!overlayBlobUrl || viewMode === "original"}
+              onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+              className="h-2 w-28 cursor-pointer accent-sky-600 disabled:opacity-40"
+            />
+            <span className="font-mono font-semibold text-slate-900 min-w-[3.2rem]">
+              {showOverlay ? `${overlayOpacity}%` : "0%"}
+            </span>
+          </div>
+
+          {hasPeakCoords && overlayBlobUrl && viewMode !== "original" && (
+            <button
+              type="button"
+              onClick={() => setShowPeakMarker((p) => !p)}
+              className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium transition ${
+                showPeakMarker
+                  ? "border-rose-300 bg-rose-50 text-rose-800"
+                  : "border-slate-300 bg-white text-slate-600"
+              }`}
+            >
+              <Crosshair className="h-3 w-3" />
+              {showPeakMarker ? "Titik Puncak: ON" : "Titik Puncak: OFF"}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
           <Maximize2 className="h-3.5 w-3.5 text-slate-500" />
-          <span>Pan Offset:</span>
+          <span>Geser:</span>
           <button
             type="button"
             onClick={() => setPanX((x) => x - 20)}
@@ -254,7 +306,7 @@ export default function MedicalImageViewer({
           <div className="flex flex-col items-center gap-2 text-slate-400">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
             <span className="text-xs">
-              Verifying access boundary & streaming lossless raster...
+              Verifying access boundary &amp; streaming lossless raster...
             </span>
           </div>
         )}
@@ -269,7 +321,67 @@ export default function MedicalImageViewer({
           </div>
         )}
 
-        {!loadingImage && !imageError && rawBlobUrl && (
+        {!loadingImage && !imageError && rawBlobUrl && viewMode === "split" && (
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* Left Side: Unaltered Clean Original */}
+            <div className="flex flex-col items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/60 p-2">
+              <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-200">
+                1. Foto Medis Asli (Tanpa Warna AI)
+              </span>
+              <div
+                className="relative select-none overflow-hidden transition-transform duration-150"
+                style={{
+                  transform: `translate(${panX}px, ${panY}px) scale(${zoom / 100})`,
+                }}
+              >
+                <img
+                  src={rawBlobUrl}
+                  alt={`Original scan ${image.original_filename}`}
+                  className="max-h-[320px] w-auto rounded object-contain"
+                  style={{ filter: invertLut ? "invert(1)" : "none" }}
+                />
+              </div>
+            </div>
+
+            {/* Right Side: With XAI Heatmap & Peak Crosshair */}
+            <div className="flex flex-col items-center gap-1.5 rounded-lg border border-sky-500/30 bg-slate-900/60 p-2">
+              <span className="rounded bg-sky-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-300">
+                2. Titik Fokus Perhatian AI (Grad-CAM {overlayOpacity}%)
+              </span>
+              <div
+                className="relative select-none overflow-hidden transition-transform duration-150"
+                style={{
+                  transform: `translate(${panX}px, ${panY}px) scale(${zoom / 100})`,
+                }}
+              >
+                <img
+                  src={rawBlobUrl}
+                  alt={`Medical scan overlay ${image.original_filename}`}
+                  className="max-h-[320px] w-auto rounded object-contain"
+                  style={{ filter: invertLut ? "invert(1)" : "none" }}
+                />
+                {overlayBlobUrl && (
+                  <img
+                    src={overlayBlobUrl}
+                    alt="Grad-CAM Spatial Attribution Overlay"
+                    className="pointer-events-none absolute inset-0 h-full w-full rounded object-contain"
+                    style={{ opacity: overlayOpacity / 100 }}
+                  />
+                )}
+                {showPeakMarker && hasPeakCoords && (
+                  <div
+                    className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+                    style={{ left: `${peakX * 100}%`, top: `${peakY * 100}%` }}
+                  >
+                    <div className="h-7 w-7 rounded-full border-2 border-dashed border-white shadow-[0_0_8px_rgba(0,0,0,0.9)]" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loadingImage && !imageError && rawBlobUrl && viewMode !== "split" && (
           <div
             className="relative select-none transition-transform duration-150"
             style={{
@@ -287,7 +399,7 @@ export default function MedicalImageViewer({
             />
 
             {/* Separate Derived Grad-CAM Heatmap Overlay */}
-            {overlayBlobUrl && showOverlay && (
+            {showOverlay && overlayBlobUrl && (
               <img
                 src={overlayBlobUrl}
                 alt="Grad-CAM Spatial Attribution Overlay"
@@ -296,6 +408,20 @@ export default function MedicalImageViewer({
                   opacity: overlayOpacity / 100,
                 }}
               />
+            )}
+
+            {/* Peak Focus Marker */}
+            {showOverlay && showPeakMarker && hasPeakCoords && (
+              <div
+                className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${peakX * 100}%`, top: `${peakY * 100}%` }}
+                title={`Titik fokus tertinggi AI (${Math.round(peakX * 100)}%, ${Math.round(peakY * 100)}%)`}
+              >
+                <div className="h-8 w-8 rounded-full border-2 border-dashed border-white shadow-[0_0_8px_rgba(0,0,0,0.85)]" />
+                <span className="mt-1 block whitespace-nowrap rounded bg-slate-900/85 px-1.5 py-0.5 text-[9px] font-bold text-white border border-white/30">
+                  Fokus Puncak AI
+                </span>
+              </div>
             )}
           </div>
         )}
@@ -309,7 +435,7 @@ export default function MedicalImageViewer({
         </div>
       </div>
 
-      {/* Attribution Color Legend & Mandatory Clinical Safety Warning */}
+      {/* Attribution Color Legend, Plain-Language Reading Guide & Clinical Warning */}
       <div className="border-t border-slate-200 bg-slate-50 p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
@@ -325,11 +451,48 @@ export default function MedicalImageViewer({
 
         {/* Thermal Gradient Bar */}
         <div className="space-y-1">
-          <div className="h-3 w-full rounded-full bg-gradient-to-r from-blue-900 via-cyan-400 via-50% via-yellow-400 to-red-600 shadow-inner" />
+          <div className="h-3 w-full rounded-full bg-gradient-to-r from-slate-200 via-cyan-400 via-45% via-yellow-400 to-red-600 shadow-inner" />
           <div className="flex justify-between text-[11px] font-medium text-slate-600">
-            <span>0.00 (Minimal Gradient Contribution)</span>
-            <span>0.50 (Moderate Feature Weight)</span>
-            <span>1.00 (Peak Class Score Attribution)</span>
+            <span>0.00 – 0.23 (Transparan / Normal)</span>
+            <span>0.50 (Pengaruh Sedang)</span>
+            <span>1.00 (Fokus Puncak AI)</span>
+          </div>
+        </div>
+
+        {/* Beginner-Friendly Color Reading Guide */}
+        <div className="rounded-lg border border-sky-200 bg-white p-3 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-sky-950">
+            <HelpCircle className="h-4 w-4 text-sky-600" />
+            Cara Mudah Membaca Warna XAI (Agar Tidak Bingung):
+          </div>
+          <div className="grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-3">
+            <div className="flex items-start gap-2 rounded bg-slate-50 p-2 border border-slate-200">
+              <span className="mt-0.5 h-3 w-3 shrink-0 rounded-full border border-slate-400 bg-white" />
+              <div>
+                <strong className="text-slate-900">Bening (Tanpa Warna):</strong>
+                <p className="text-slate-600">
+                  Jaringan normal atau area yang dianggap wajar oleh AI. Foto asli tetap terlihat jelas.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded bg-amber-50/70 p-2 border border-amber-200">
+              <span className="mt-0.5 h-3 w-3 shrink-0 rounded-full bg-amber-400" />
+              <div>
+                <strong className="text-amber-950">Biru / Hijau / Kuning:</strong>
+                <p className="text-amber-900/80">
+                  Area pendukung. AI mulai membandingkan kepadatan atau asimetri di sekitar zona ini.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded bg-rose-50/80 p-2 border border-rose-200">
+              <span className="mt-0.5 h-3 w-3 shrink-0 rounded-full bg-rose-600" />
+              <div>
+                <strong className="text-rose-950">Merah Terang + Lingkaran:</strong>
+                <p className="text-rose-900/80">
+                  Area paling diperhatikan AI saat memilih kesimpulan. Wajib diperiksa ulang dengan klik tombol <strong>&ldquo;Bandingkan&rdquo;</strong>.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 

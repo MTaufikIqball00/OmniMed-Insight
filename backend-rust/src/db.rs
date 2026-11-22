@@ -963,6 +963,14 @@ async fn provision_icu_synthetic_demonstration_data(pool: &SqlitePool) -> Result
             "shap_value": 0.118,
             "direction": "INCREASES_RISK",
             "clinical_rationale": "Sustained tachycardia represents compensatory sympathetic surge in response to vasodilation or pyrexia."
+        },
+        {
+            "feature": "MAP_latest",
+            "display_name": "Latest Mean Arterial Pressure (MAP)",
+            "current_value": 66.0,
+            "shap_value": -0.092,
+            "direction": "DECREASES_RISK",
+            "clinical_rationale": "MAP remains marginally above critical organ-hypoperfusion threshold (>= 65 mmHg), partially moderating immediate shock risk."
         }
     ]).to_string();
 

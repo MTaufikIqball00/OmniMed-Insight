@@ -202,6 +202,7 @@ OmniMed Insight/
 │   ├── ARCHITECTURE.md            # Comprehensive threat model & specs
 │   ├── ICU_DATASET_AND_LABEL_SPEC.md # Sepsis-3 6-12h horizon & cohort provenance
 │   ├── ARCHIVE2_DATASET_REPORT.md # 5,000-patient synthetic cohort & anti-leakage audit
+│   ├── XAI_AUDIT_AND_IMPROVEMENT_REPORT.md # XAI calibration, Grad-CAM/SHAP & UX audit
 │   └── UI_AUDIT.md                # Accessibility & Tailwind v3 checklist
 ├── run-local.bat                  # One-click Windows Batch launcher
 ├── run-local.ps1                  # PowerShell launcher with port conflict detection
@@ -296,7 +297,7 @@ Every layer contains dedicated automated test suites:
 ### 1. Python AI Service Tests (PyTest)
 ```bash
 python -m pytest ai-service-python/tests/ -v
-# Output: 12 passed (Imaging XAI, Temporal Leakage Prevention, Patient-Boundary Isolation, ICU SHAP Inference, Archive2 Cohort Validation)
+# Output: 13 passed (Imaging XAI Calibration, Grad-CAM Transparency/Localization, Temporal Leakage Prevention, Patient-Boundary Isolation, ICU SHAP Inference, Archive2 Cohort Validation)
 ```
 
 ### 2. Rust Backend Security & Integration Tests (Cargo Test)
@@ -308,7 +309,7 @@ cargo test
 # - test_cross_patient_idor_prevention_and_rbac_boundaries ... ok
 # - test_report_drafting_clinician_review_and_fhir_r4_bundle ... ok
 # - test_icu_stays_listing_and_rbac_boundaries ... ok
-# - test_icu_models_and_alert_acknowledgement_workflow ... ok
+# - test_icu_workspace_idor_and_alert_lifecycle ... ok
 ```
 
 ### 3. Frontend Contract & Type Validation

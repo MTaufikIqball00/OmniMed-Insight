@@ -78,6 +78,47 @@ FEATURE_CLINICAL_RATIONALE = {
     "temp_deviation": "Significant thermal displacement from 37°C indicates systemic inflammatory response syndrome (SIRS).",
 }
 
+
+def _build_contextual_rationale(feat_name: str, curr_val: float, direction: str, s_val: float) -> str:
+    """
+    Produces a non-contradictory, clinician-friendly explanation grounded in BOTH the
+    patient's actual numeric measurement and the statistical Tree-SHAP direction.
+    """
+    if "Lactate" in feat_name and curr_val > 2.0 and direction == "DECREASES_RISK":
+        return (
+            f"Cohort tree note: statistical weight is {s_val:+.3f} vs median-imputed baseline "
+            f"(surveillance effect in small cohort), yet clinically Lactate {curr_val:.2f} mmol/L (>2.0) "
+            "still warrants bedside evaluation for tissue hypoperfusion."
+        )
+    if feat_name.endswith("_roll_std_6h") and curr_val < 0.01 and direction == "INCREASES_RISK":
+        return (
+            f"Minimal 6h measurement variability ({curr_val:.2f}) due to few or static readings; "
+            "the tree ensemble weights sparse monitoring density slightly above variable baseline."
+        )
+    if direction == "DECREASES_RISK":
+        if "Lactate" in feat_name:
+            return f"Normal serum lactate ({curr_val:.2f} <= 2.0 mmol/L) indicates adequate tissue perfusion, pulling risk down."
+        if "pulse_pressure" in feat_name:
+            return f"Preserved pulse pressure ({curr_val:.1f} mmHg, normal ~40-60) reflects stable stroke volume."
+        if "Temp" in feat_name and 36.2 <= curr_val <= 37.8:
+            return f"Normothermic core temperature ({curr_val:.1f}°C) lowers inflammatory deterioration weight."
+        if "HR" in feat_name and 55 <= curr_val <= 100:
+            return f"Heart rate within normal range ({curr_val:.0f} bpm) lowers predicted acute stress risk."
+        if "SBP" in feat_name or "MAP" in feat_name:
+            return f"Hemodynamic pressure ({curr_val:.1f} mmHg) remains above hypotensive shock thresholds, reducing predicted risk."
+        if "shock_index" in feat_name and curr_val <= 0.85:
+            return f"Normal Shock Index ({curr_val:.2f} <= 0.85) suggests compensated cardiac output."
+        return f"Observed value ({curr_val:.2f}) contributes negatively ({s_val:+.3f}) relative to the Sepsis-3 training cohort baseline."
+
+    base = FEATURE_CLINICAL_RATIONALE.get(
+        feat_name,
+        f"Measured value ({curr_val:.2f}) increases model sepsis risk log-odds ({s_val:+.3f}).",
+    )
+    if "pulse_pressure" in feat_name and curr_val >= 40.0:
+        return f"Pulse pressure ({curr_val:.1f} mmHg) relative to systolic distribution contributed upward tree weight ({s_val:+.3f})."
+    return base
+
+
 class IcuEarlyWarningEngine:
     def __init__(self, models_dir: Optional[Path] = None):
         if models_dir is None:
@@ -295,7 +336,7 @@ class IcuEarlyWarningEngine:
                 
                 direction = "INCREASES_RISK" if s_val > 0.005 else ("DECREASES_RISK" if s_val < -0.005 else "NEUTRAL")
                 disp_name = FEATURE_DISPLAY_NAMES.get(feat_name, feat_name.replace("_", " ").title())
-                rationale = FEATURE_CLINICAL_RATIONALE.get(feat_name, f"Feature impact measured by tree gradient attribution ({direction}).")
+                rationale = _build_contextual_rationale(feat_name, curr_val, direction, s_val)
                 
                 top_shap_items.append({
                     "feature": feat_name,

@@ -652,70 +652,160 @@ export default function IcuEarlyWarningWorkspace({
               </span>
             </div>
 
-            <p className="text-xs text-slate-500">
-              Directional contributions of patient features toward current risk score. Values show statistical tree split weights, not medical causes.
-            </p>
+            {/* Plain-Language SHAP Summary Box */}
+            {latestPrediction && (parsedShapItems || []).length > 0 && (() => {
+              const incItems = parsedShapItems.filter((x) => x.direction === "INCREASES_RISK");
+              const decItems = parsedShapItems.filter((x) => x.direction === "DECREASES_RISK");
+              const topDrivers = incItems.slice(0, 2).map((x) => x.display_name || x.feature);
+              const topBuffers = decItems.slice(0, 1).map((x) => x.display_name || x.feature);
+              return (
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 p-3 text-xs space-y-1.5">
+                  <p className="font-bold text-indigo-950">
+                    Mengapa AI Memberi Status Risiko {latestPrediction.risk_tier}?
+                  </p>
+                  <p className="text-slate-700 leading-relaxed">
+                    Skor risiko pasien saat ini{" "}
+                    <strong>{((Number(latestPrediction.risk_score) || 0) * 100).toFixed(1)}%</strong>{" "}
+                    (ambang waspada{" "}
+                    <strong>{((Number(latestPrediction.decision_threshold) || 0.0326) * 100).toFixed(1)}%</strong>).{" "}
+                    {topDrivers.length > 0 ? (
+                      <>
+                        Faktor utama yang <strong className="text-rose-700">mendorong naik risiko (Merah)</strong>:{" "}
+                        <strong>{topDrivers.join(" & ")}</strong>.{" "}
+                      </>
+                    ) : (
+                      <>Tidak ada pemicu risiko dominan saat ini. </>
+                    )}
+                    {topBuffers.length > 0 ? (
+                      <>
+                        Faktor yang <strong className="text-emerald-700">membantu menahan risiko (Hijau)</strong>:{" "}
+                        <strong>{topBuffers[0]}</strong>.
+                      </>
+                    ) : null}
+                  </p>
+                  <div className="flex items-center gap-3 text-[11px] pt-0.5 text-slate-600">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                      Merah = Menaikkan Risiko ({incItems.length})
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                      Hijau = Menahan Risiko ({decItems.length})
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="space-y-3">
               {(parsedShapItems || []).length === 0 ? (
                 <div className="text-center py-6 text-xs text-slate-400">
                   Run a risk evaluation to inspect SHAP attributions.
                 </div>
-              ) : (
-                (parsedShapItems || []).slice(0, 6).map((item, idx) => {
+              ) : (() => {
+                const topSlice = (parsedShapItems || []).slice(0, 6);
+                const maxAbs = Math.max(
+                  ...topSlice.map((it) => Math.abs(Number(it?.shap_value || 0))),
+                  0.05
+                );
+                const getNormalHint = (featName: string): string => {
+                  const f = featName.toLowerCase();
+                  if (f.includes("lactate")) return "Normal: < 2.0 mmol/L";
+                  if (f.includes("shock")) return "Normal: 0.5 – 0.7";
+                  if (f.includes("pulse_pressure")) return "Normal: 40 – 60 mmHg";
+                  if (f.includes("map")) return "Normal: >= 65 mmHg";
+                  if (f.includes("sbp")) return "Normal: 95 – 120 mmHg";
+                  if (f.includes("hr")) return "Normal: 60 – 100 bpm";
+                  if (f.includes("resp")) return "Normal: 12 – 20 /mnt";
+                  if (f.includes("temp")) return "Normal: 36.5 – 37.5°C";
+                  if (f.includes("wbc")) return "Normal: 4.5 – 11.0";
+                  if (f.includes("o2sat")) return "Normal: >= 95%";
+                  return "";
+                };
+                return topSlice.map((item, idx) => {
                   const isPositive = item?.direction === "INCREASES_RISK";
                   const sVal = Number(item?.shap_value || 0);
                   const cVal = Number(item?.current_value || 0);
+                  const barPct = Math.max(8, Math.min(100, (Math.abs(sVal) / maxAbs) * 100));
+                  const normalHint = getNormalHint(item?.feature || "");
                   return (
                     <div key={idx} className="p-2.5 bg-slate-50 rounded-md border border-slate-200 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
                         <span className="font-semibold text-slate-800 flex items-center gap-1.5">
                           {isPositive ? (
                             <>
                               <ArrowUpRight className="h-3.5 w-3.5 text-rose-500" />
-                              <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                                INCREASES_RISK
+                              <span
+                                className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
+                                title="INCREASES_RISK"
+                              >
+                                ↑ NAIKKAN RISIKO <span className="sr-only">INCREASES_RISK</span>
                               </span>
                             </>
                           ) : (
                             <>
                               <ArrowDownRight className="h-3.5 w-3.5 text-emerald-500" />
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                DECREASES_RISK
+                              <span
+                                className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200"
+                                title="DECREASES_RISK"
+                              >
+                                ↓ TAHAN RISIKO <span className="sr-only">DECREASES_RISK</span>
                               </span>
                             </>
                           )}
                           {item?.display_name || item?.feature || "Feature"}
                         </span>
                         <span className="font-mono text-[11px] text-slate-600">
-                          Val: <strong>{cVal}</strong> | SHAP:{" "}
+                          Pasien: <strong>{cVal}</strong>{" "}
+                          {normalHint ? <span className="text-slate-400">({normalHint})</span> : null} |{" "}
                           <strong className={isPositive ? "text-rose-600" : "text-emerald-600"}>
                             {sVal > 0 ? `+${sVal.toFixed(3)}` : sVal.toFixed(3)}
                           </strong>
                         </span>
                       </div>
 
-                      {/* Directional Impact Bar */}
+                      {/* Proportional Directional Impact Bar */}
                       <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden flex">
                         <div
                           className={`h-full ${isPositive ? "bg-rose-500" : "bg-emerald-500"}`}
-                          style={{ width: `${Math.min(100, Math.abs(sVal) * 150)}%` }}
+                          style={{ width: `${barPct}%` }}
                         />
                       </div>
 
-                      <p className="text-[11px] text-slate-500 leading-tight">
+                      <p className="text-[11px] text-slate-600 leading-snug">
                         {item?.clinical_rationale || ""}
                       </p>
                     </div>
                   );
-                })
-              )}
+                });
+              })()}
             </div>
+
+            {/* Actionable Follow-up Guidance */}
+            {latestPrediction && (
+              <div className="p-3 bg-sky-50 border border-sky-200 rounded-md text-[11px] text-sky-950 space-y-1">
+                <p className="font-bold text-sky-900">
+                  Rekomendasi Tindakan Lanjutan (Decision Support):
+                </p>
+                {latestPrediction.risk_tier === "CRITICAL" || latestPrediction.risk_tier === "HIGH" ? (
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>Lakukan evaluasi klinis <em>bedside</em> segera (cek perfusi perifer, kesadaran/GCS, dan produksi urin).</li>
+                    <li>Periksa tren laboratorium penentu utama di grafik kiri (seperti serum Laktat serial, darah lengkap, &amp; kultur darah bila curiga infeksi).</li>
+                    <li>Klik <strong>&ldquo;Acknowledge &amp; Sign&rdquo;</strong> pada kartu peringatan bila rencana observasi atau resusitasi telah ditetapkan oleh dokter penanggung jawab.</li>
+                  </ul>
+                ) : (
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>Kondisi relatif stabil; lanjutkan pemantauan tanda vital per jam secara rutin.</li>
+                    <li>Klik <strong>&ldquo;Run Risk Evaluation&rdquo;</strong> kembali apabila terdapat tren perubahan MAP, laju napas, atau hasil laktat terbaru.</li>
+                  </ul>
+                )}
+              </div>
+            )}
 
             <div className="p-3 bg-slate-100 rounded text-[11px] text-slate-500 border border-slate-200 flex items-start gap-2">
               <Info className="h-3.5 w-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
               <span>
-                <strong>Attribution Notice:</strong> SHAP values explain model predictions relative to the baseline population. High SHAP attribution does not prove medical causation.
+                <strong>Attribution Notice:</strong> SHAP values explain statistical tree contributions relative to the baseline ICU cohort, not direct medical causation.
               </span>
             </div>
           </div>

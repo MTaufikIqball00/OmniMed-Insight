@@ -2210,6 +2210,56 @@ export default function OmniMedApp() {
                         </span>
                       </div>
 
+                      {/* Plain-Language Summary & Follow-up Recommendation */}
+                      <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-3.5 text-xs text-sky-950 space-y-2">
+                        <p className="font-bold flex items-center gap-1.5 text-sky-900">
+                          <Sparkles className="h-3.5 w-3.5 text-sky-600" />
+                          Ringkasan Mudah Dipahami &amp; Rekomendasi Lanjutan
+                        </p>
+                        <p className="leading-relaxed text-slate-700">
+                          AI melihat pola{" "}
+                          <strong className="text-slate-900">
+                            {selectedJob.predicted_class_label}
+                          </strong>{" "}
+                          (skor pola{" "}
+                          <strong>
+                            {((Number(selectedJob.predicted_probability) || 0) * 100).toFixed(1)}%
+                          </strong>
+                          ).{" "}
+                          {parsedXaiMeta?.top_regions?.[0] ? (
+                            <>
+                              Fokus warna merah paling dominan berada di{" "}
+                              <strong className="text-rose-800">
+                                {parsedXaiMeta.top_regions[0].region_name}
+                              </strong>{" "}
+                              (mencakup{" "}
+                              <strong>
+                                {(Number(parsedXaiMeta.active_area_ratio || 0) * 100).toFixed(1)}%
+                              </strong>{" "}
+                              area foto).
+                            </>
+                          ) : null}
+                        </p>
+                        <div className="rounded bg-white/90 p-2.5 border border-sky-200/80 space-y-1 text-[11px] text-slate-700">
+                          <p className="font-semibold text-slate-900">
+                            Langkah Verifikasi yang Disarankan:
+                          </p>
+                          <ul className="list-disc pl-4 space-y-0.5">
+                            <li>
+                              Klik tab <strong>&ldquo;Bandingkan&rdquo;</strong> di penampil gambar kiri untuk mengecek apakah area bercak merah benar-benar sesuai kelainan atau bayangan anatomi normal.
+                            </li>
+                            <li>
+                              {selectedJob.predicted_class_code?.includes("NO_ACUTE")
+                                ? "Pola cenderung normal; tetap konfirmasi visual paru/jaringan secara menyeluruh."
+                                : "Cocokkan lokasi fokus AI dengan keluhan pasien & tabel observasi lab/vital (suhu, CRP, leukosit) di bawah gambar."}
+                            </li>
+                            <li>
+                              Gunakan tombol <strong>Generate Evidence-Grounded Report Draft</strong> di bawah untuk menyusun draf sebelum tinjauan klinisi.
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+
                       {/* Uncertainty & Shannon Entropy Disclosure */}
                       <div
                         className={`rounded-lg border p-3 text-xs ${
@@ -2219,9 +2269,10 @@ export default function OmniMedApp() {
                         }`}
                       >
                         <p className="font-bold">
-                          Uncertainty Status: {selectedJob.uncertainty_level} •
-                          Shannon Entropy: {selectedJob.shannon_entropy} / 2.00
-                          bits
+                          Tingkat Keraguan Model (Uncertainty):{" "}
+                          {selectedJob.uncertainty_level} • Entropi:{" "}
+                          {Math.max(0, Number(selectedJob.shannon_entropy || 0)).toFixed(2)}{" "}
+                          / 2.00 bits
                         </p>
                         <p className="mt-1">{selectedJob.uncertainty_reason}</p>
                       </div>
@@ -2229,7 +2280,7 @@ export default function OmniMedApp() {
                       {/* Candidate Class Probability Distribution */}
                       <div className="space-y-2">
                         <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                          Candidate Pattern Score Distribution
+                          Distribusi Skor Pola Kandidat (Candidate Patterns)
                         </p>
                         {parsedClassScores.map((cs) => (
                           <div key={cs.class_code} className="space-y-1">
@@ -2256,24 +2307,48 @@ export default function OmniMedApp() {
                       {/* Anatomical Quadrant Attribution Summary */}
                       {parsedXaiMeta && (
                         <div className="space-y-2 border-t border-slate-100 pt-3">
-                          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                            Anatomical Quadrant Attribution ({parsedXaiMeta.method})
-                          </p>
-                          <div className="space-y-1.5">
-                            {parsedXaiMeta.top_regions.map((reg) => (
-                              <div
-                                key={reg.quadrant_code}
-                                className="flex items-center justify-between rounded bg-slate-50 px-2.5 py-1.5 text-xs"
-                              >
-                                <span className="font-medium text-slate-700">
-                                  {reg.region_name}
-                                </span>
-                                <span className="font-mono text-slate-900">
-                                  mean {reg.mean_attribution.toFixed(2)} | peak{" "}
-                                  {reg.peak_attribution.toFixed(2)}
-                                </span>
-                              </div>
-                            ))}
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                              Fokus Zona Anatomi ({parsedXaiMeta.method})
+                            </p>
+                            <span className="text-[11px] text-slate-500">
+                              Semakin penuh = makin diperhatikan AI
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {parsedXaiMeta.top_regions.map((reg, idx) => {
+                              const peakPct = Math.round((Number(reg.peak_attribution) || 0) * 100);
+                              const meanPct = Math.round((Number(reg.mean_attribution) || 0) * 100);
+                              return (
+                                <div
+                                  key={reg.quadrant_code}
+                                  className={`rounded-lg border px-2.5 py-2 text-xs space-y-1 ${
+                                    idx === 0
+                                      ? "border-rose-200 bg-rose-50/50"
+                                      : "border-slate-200 bg-slate-50"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-slate-800">
+                                      {idx === 0 ? "🎯 " : ""}
+                                      {reg.region_name}
+                                    </span>
+                                    <span className="font-mono text-[11px] text-slate-700">
+                                      Rata-rata {meanPct}% • Puncak{" "}
+                                      <strong>{peakPct}%</strong>
+                                    </span>
+                                  </div>
+                                  <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full ${
+                                        idx === 0 ? "bg-rose-500" : "bg-sky-500"
+                                      }`}
+                                      style={{ width: `${Math.max(4, peakPct)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
