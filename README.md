@@ -103,10 +103,13 @@ flowchart TD
 
 ## 2. Key Capabilities & Technical Highlights
 
-### 🔬 Explainable AI (XAI) & PyTorch Vision Engine
-* **Real Gradient-Weighted Class Activation Mapping (Grad-CAM)**: Forward and backward gradient hooks registered on `features.denseblock4` of PyTorch DenseNet-121 to extract real spatial feature sensitivities without mock approximations.
-* **Pixel-Accurate Heatmap Overlay**: Generates full RGBA jet/turbo thermal heatmaps dynamically composited over raw radiographs and MRI scans with a live opacity slider (0%–100%).
-* **Predictive Uncertainty Classification**: Evaluates candidate class probabilities using **Shannon Entropy** ($H = -\sum p_i \log_2 p_i$) and classifies inferences into `LOW`, `MODERATE`, or `HIGH` uncertainty.
+### 🔬 Explainable AI (XAI), Checkpoint Integrity & PyTorch Vision Engine
+* **Real Gradient-Weighted Class Activation Mapping (Grad-CAM / HiResCAM)**: Forward and backward gradient hooks registered on `features.denseblock4` of PyTorch DenseNet-121 to extract real spatial feature sensitivities with transparent low-activation masking (`alpha = 0`) and no mock approximations.
+* **Reproducible Training, Checkpoint Integrity & Post-Hoc Calibration (`ai-service-python/imaging_pipeline/`)**:
+  * Supports `--manifest-csv` (patient-level 70/15/15 stratified splits for DUA-authorized clinical cohorts) and `--synthetic-benchmark` (`SYNTHETIC_BENCHMARK_FIXTURE`, 240 patients / 480 4-class CXR images, zero patient overlap verified).
+  * Validates `MODEL_WEIGHTS_PATH` + `MODEL_WEIGHTS_EXPECTED_SHA256`, finite weights, and bounded forward logits (`|logit| < 100.0`), rolling back safely to `RESEARCH_UNVERIFIED` on any corruption or mismatch.
+  * Fits `TemperatureScaler` (`T = 0.4780`) and `MulticlassPlattScaler` strictly on `val_logits.npz` (`n = 72`), achieving held-out synthetic benchmark `Accuracy = 0.9722`, `ECE = 0.0216`, `Brier = 0.0113`, `NLL = 0.0981` (`CALIBRATED_CHECKPOINT` tagged `SYNTHETIC_BENCHMARK_FIXTURE`). See [`docs/IMAGING_MODEL_PROVENANCE.md`](docs/IMAGING_MODEL_PROVENANCE.md) for external dataset DUA gaps (NIH ChestX-ray14, CheXpert, MIMIC-CXR, RSNA, BraTS not present locally).
+* **Predictive Uncertainty Classification**: Evaluates candidate class probabilities using **Shannon Entropy** ($H = -\sum p_i \log_2 p_i$) and surfaces live empirical calibration curves (`ReliabilityBin`) in the UI.
 
 ### 🛡️ Rust Application Security & Zero-Trust Architecture
 * **Strict Server-Side RBAC**: Role-based access control enforced on every endpoint (`admin`, `clinician`, `reviewer`, `readonly`). Client-side state is never trusted.
@@ -128,11 +131,20 @@ flowchart TD
 * **On-Demand Case Creation**: Open new CXR (Chest Radiograph) or Brain MRI cases linked to any registered patient with custom priorities (`ROUTINE`, `URGENT`, `STAT`).
 
 ### ⚡ ICU Early Warning & Sepsis Deterioration Prediction (6–12h Horizon)
-* **PhysioNet 2019 Longitudinal Clinical Benchmark (`v1.0.0-physionet2019`)**: Trained, calibrated, and evaluated on 118 real ICU stays (4,615 hourly records) from the Computing in Cardiology Challenge 2019 under CC BY 4.0 with zero patient overlap across splits (`AUROC = 0.8663`, `Sensitivity = 100.0%`, `Specificity = 56.4%`, `Brier = 0.0232` vs qSOFA baseline `AUROC = 0.5548`).
-* **Archive2 5,000-Patient Multi-Center Synthetic Cohort (`v2.0.0-archive2-5k`)**: Audited for strict anti-leakage (excluding post-event interventions, future discharge outcomes, and synthetic deterministic proxies), evaluating 83 baseline physiological and laboratory predictors (`AUROC = 0.9954`, `AUPRC = 0.9864`, `Brier = 0.0111`) alongside a separate Secondary Endpoint model for Heart Failure / Cardiovascular Deterioration (`CHF AUROC = 0.7176`).
-* **Sepsis-3 Horizon Modeling**: Targets an explicit **6 to 12-hour warning horizon** preceding clinical sepsis onset ($t_{sepsis}-12 \le t \le t_{sepsis}-6$) using backward-looking observations only (no future data leakage).
-* **Tree SHAP Local Feature Attributions**: Integrates TreeExplainer to compute exact feature attribution vectors showing directional impact (`INCREASES_RISK` vs `DECREASES_RISK`) across vitals, labs, pulse pressure, shock index, and temperature volatility.
+* **Expanded PhysioNet 2019 Longitudinal Clinical Cohort (`v2.0.0-physionet2019`, CC BY 4.0)**: Expanded from 118 stays (`4,615` rows) to **988 eligible real ICU stays (`38,270` hourly records)** across Hospital Systems A (`492`) and B (`496`) with **59 sepsis-positive stays / 407 positive 6–12h rows** and zero patient overlap across 70/15/15 stratified splits (`691` train / `148` val / `149` test stays; see [`docs/ICU_DATASET_PROVENANCE.md`](docs/ICU_DATASET_PROVENANCE.md)).
+* **Monotonic Clinical Guard & Post-Hoc Isotonic Calibration**: LightGBM (`lightgbm_monotonic`) enforces `monotone_constraints_method="advanced"` (`+1` on Lactate, Shock Index, MAP hypoperfusion depth, qSOFA, HR, Resp, Temp deviation, Creatinine, BUN; `-1` on MAP, SBP, O2Sat, Platelets, HCO3) and validation-fitted `ISOTONIC_CALIBRATION` (`calibrated_threshold = 0.0200`), reducing held-out test ECE from `0.0512` (old 118-stay baseline) to **`0.0005`** while lifting specificity from `56.4%` to **`75.0%`** (`AUROC = 0.7817`, `Sensitivity = 65.1%`, `Brier = 0.0108`).
+* **Archive2 5,000-Patient Multi-Center Synthetic Cohort (`v2.0.0-archive2-5k`)**: Audited for strict anti-leakage (excluding post-event interventions, future outcomes, and synthetic target proxies), evaluating 83 predictors with validation-fitted `PLATT_SCALING` (`AUROC = 0.9954`, `AUPRC = 0.9864`, `ECE = 0.0104` vs `0.0225` uncalibrated, `Sensitivity = 92.0%`, `Specificity = 99.5%`, `calibrated_threshold = 0.67`) alongside a Secondary CHF Endpoint (`AUROC = 0.7176`).
+* **Sepsis-3 Horizon Modeling & Stratified Tree SHAP**: Targets a **6 to 12-hour warning horizon** ($t_{sepsis}-12 \le t \le t_{sepsis}-6$) using backward-looking observations only and a 200-row stratified `TreeExplainer` background (`INCREASES_RISK` vs `DECREASES_RISK`) guaranteed immune to Lactate/MAP polarity inversion.
 * **Alert Deduplication & Signed Clinician Sign-Off**: Stratifies risk (`CRITICAL`, `HIGH`, `MODERATE`, `LOW`, `INSUFFICIENT_DATA`), suppresses repeated alerts with a 4-hour cooldown window, and requires signed clinician acknowledgement notes permanently logged in `audit_logs`.
+
+#### Experimental Comparison (Before vs. After Calibration & Cohort Expansion)
+
+| Module & Model | Cohort / Split | AUROC / Acc | Brier | ECE | Sensitivity / Specificity | Guard / Provenance |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| **ICU Primary (Before: 118 stays, Uncalibrated)** | PhysioNet Test (`782` rows) | `0.8663` AUROC | `0.0232` | `0.0512` | `100.0%` / `56.4%` | Unconstrained (Lactate SHAP inversion) |
+| **ICU Primary (After: 988 stays, Monotonic + `ISOTONIC_CALIBRATION`)** | PhysioNet Test (`5,625` rows) | `0.7817` AUROC | `0.0108` | **`0.0005`** | `65.1%` / **`75.0%`** | **`Monotonic Clinical Guard: ACTIVE`** |
+| **ICU Archive2 Cohort (Before -> After `PLATT_SCALING`)** | Archive2 Test (`750` patients) | `0.9954` AUROC | `0.0111 -> 0.0116` | `0.0225 ->` **`0.0104`** | `92.0%` / `99.5%` | Synthetic tabular cohort (`monotone=False`) |
+| **Imaging DenseNet-121 (Before -> After `TEMPERATURE_SCALING`)** | Synthetic Benchmark Test (`72` imgs) | `97.22%` Acc | `0.0085 -> 0.0113` | `0.0190 ->` **`0.0216`** | N/A (4-class) | `SYNTHETIC_BENCHMARK_FIXTURE` (not clinical) |
 
 ### 🏥 HL7 FHIR R4 Interoperability
 * Generates validated FHIR R4 JSON Bundles encapsulating `Patient`, `Practitioner`, `Encounter`, `Observation` (LOINC-coded vitals and labs), `ImagingStudy`, and `DiagnosticReport` resources.
@@ -175,14 +187,16 @@ OmniMed Insight/
 │   └── tests/                     # Integration and security test suite
 ├── ai-service-python/             # Python Medical AI & XAI Engine
 │   ├── app/
+│   │   ├── calibration.py         # ECE/Brier/NLL, TemperatureScaler, MulticlassPlattScaler, FrozenEstimator calibrators
 │   │   ├── config.py              # Environment configuration & token validator
 │   │   ├── imaging.py             # Binary magic-byte & SHA-256 verification
-│   │   ├── xai_engine.py          # PyTorch DenseNet-121 & Grad-CAM hooks
-│   │   ├── icu_engine.py          # LightGBM Sepsis-3 & Tree SHAP inference engine
-│   │   └── main.py                # FastAPI endpoints & health checks
-│   ├── icu_pipeline/              # Reproducible ICU feature engineering & training
-│   ├── models/icu/                # Serialized joblib artifacts & JSON metadata
-│   ├── tests/                     # Pytest suite for imaging & ICU inference
+│   │   ├── xai_engine.py          # PyTorch DenseNet-121, checkpoint validation & HiResCAM/Grad-CAM hooks
+│   │   ├── icu_engine.py          # Calibrated LightGBM Sepsis-3 & Tree SHAP inference engine
+│   │   └── main.py                # FastAPI endpoints & live calibration health checks
+│   ├── imaging_pipeline/          # Reproducible DenseNet-121 training, patient-level split & calibration
+│   ├── icu_pipeline/              # Reproducible ICU feature engineering, monotonic LightGBM & calibration
+│   ├── models/                    # Serialized imaging & ICU artifacts, calibrators, and JSON metadata
+│   ├── tests/                     # Pytest suite for imaging, calibration, monotonic SHAP & ICU inference
 │   └── requirements.txt           # PyTorch, LightGBM, XGBoost, SHAP, FastAPI
 ├── frontend/                      # Next.js 14 + Tailwind CSS Frontend
 │   ├── package.json               # Next.js 14.2, Tailwind v3, Lucide icons
@@ -201,6 +215,8 @@ OmniMed Insight/
 ├── docs/                          # Architectural documentation & clinical reports
 │   ├── ARCHITECTURE.md            # Comprehensive threat model & specs
 │   ├── ICU_DATASET_AND_LABEL_SPEC.md # Sepsis-3 6-12h horizon & cohort provenance
+│   ├── ICU_DATASET_PROVENANCE.md  # Expanded 988-stay PhysioNet cohort provenance & splits
+│   ├── IMAGING_MODEL_PROVENANCE.md # External radiology dataset DUA audit & synthetic benchmark spec
 │   ├── ARCHIVE2_DATASET_REPORT.md # 5,000-patient synthetic cohort & anti-leakage audit
 │   ├── XAI_AUDIT_AND_IMPROVEMENT_REPORT.md # XAI calibration, Grad-CAM/SHAP & UX audit
 │   └── UI_AUDIT.md                # Accessibility & Tailwind v3 checklist
@@ -296,28 +312,29 @@ Every layer contains dedicated automated test suites:
 
 ### 1. Python AI Service Tests (PyTest)
 ```bash
-python -m pytest ai-service-python/tests/ -v
-# Output: 13 passed (Imaging XAI Calibration, Grad-CAM Transparency/Localization, Temporal Leakage Prevention, Patient-Boundary Isolation, ICU SHAP Inference, Archive2 Cohort Validation)
+python -m pytest ai-service-python/tests -v
+# Output: 19 passed (10 Imaging XAI/Checkpoint/Calibration/Rollback tests + 9 ICU Cohort/Monotonic-SHAP/Calibration/Anti-Leakage tests)
 ```
 
 ### 2. Rust Backend Security & Integration Tests (Cargo Test)
 ```bash
 cd backend-rust
 cargo test
-# Output: 5 passed
+# Output: 6 passed
 # - test_health_and_authentication_lifecycle ... ok
 # - test_cross_patient_idor_prevention_and_rbac_boundaries ... ok
 # - test_report_drafting_clinician_review_and_fhir_r4_bundle ... ok
 # - test_icu_stays_listing_and_rbac_boundaries ... ok
 # - test_icu_workspace_idor_and_alert_lifecycle ... ok
+# - test_research_telemetry_serde_defaults_and_idempotent_column_upgrade ... ok
 ```
 
-### 3. Frontend Contract & Type Validation
+### 3. Frontend Contract, Type & Production Build Validation
 ```bash
-cd frontend
-npm run typecheck
-node __tests__/ui_contracts.test.mjs
-# Output: 0 TypeScript errors, 4/4 contract tests passed
+npm --prefix frontend run typecheck
+node --test frontend/__tests__/ui_contracts.test.mjs
+npm --prefix frontend run build
+# Output: 0 TypeScript errors, 4/4 contract tests passed, Next.js production build succeeded
 ```
 
 ---

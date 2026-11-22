@@ -78,4 +78,37 @@
 ## 4. Cohort Selection & Quality Governance
 1. **Source Tracking**: All downloaded files preserve their originating patient IDs (`p000001` - `p020000` from Hospital A; `p100001` - `p120000` from Hospital B).
 2. **Missingness Preservation**: Raw records preserve `NaN` representing absent measurements. Imputation is never performed on raw sources; forward-fill with population median fallback is applied strictly on feature-engineered training partitions.
-3. **Synthetic Separation**: Any synthetic test datasets generated for offline unit tests are given synthetic prefixes (`pat-icu-synth-...`) and flagged with `is_synthetic = 1`.
+3. **Synthetic Separation**: Any synthetic test datasets generated for offline unit tests are given synthetic prefixes (`pat-icu-synth-...`) and flagged with `is_synthetic = 1`. Synthetic `.psv` trajectories (`pat_synth_*.psv`) are strictly excluded whenever real PhysioNet files are present.
+
+---
+
+## 5. Cohort Expansion, Split Audit & Before-vs-After Provenance
+
+To resolve small-sample validation variance (previously only 2 positive sepsis stays each in validation and test) and imputation-induced SHAP polarity inversion, the cohort was expanded from 120 raw stays to **1,000 real PhysioNet Challenge 2019 ICU stays** (`500` from Hospital System A `p000001`–`p000500` and `500` from Hospital System B `p100001`–`p100500`), strictly excluding synthetic files and verifying zero patient overlap across all 70/15/15 stratified patient-level partitions (`data/icu_processed/data_quality_report.json`).
+
+### Cohort Size Comparison (Before vs. After)
+
+| Metric | Before (Initial Cohort) | After (Expanded Cohort) | Change |
+| :--- | :---: | :---: | :---: |
+| **Raw PhysioNet `.psv` Files** | 120 | 1,000 (500 Set A + 500 Set B) | +880 stays (8.33x) |
+| **Excluded Stays** ($\le 4\text{h}$ onset or $< 4$ eligible rows) | 2 | 12 | +10 |
+| **Eligible Unique ICU Stays** | **118** | **988** (492 Hosp A / 496 Hosp B) | **+870 stays (8.37x)** |
+| **Total Eligible Hourly Rows** | **4,615** | **38,270** | **+33,655 rows (8.29x)** |
+| **Positive Sepsis Stays** | 14 (11.86%) | **59** (5.97%) | **+45 stays (4.21x)** |
+| **Negative Stays** | 104 | **929** | +825 stays |
+| **Positive 6–12h Warning Rows** | 92 (1.99%) | **407** (1.06%) | **+315 rows (4.42x)** |
+| **Patient-Level Overlap Check** | `PASSED_ZERO_OVERLAP` | `PASSED_ZERO_OVERLAP` | Zero leakage verified |
+
+### Stratified 70 / 15 / 15 Patient-Level Partition Breakdown
+
+| Split | Before: Stays (Pos Stays) | Before: Rows (Pos Rows / Ratio) | After: Stays (Pos Stays) | After: Rows (Pos Rows / Ratio) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Train (70%)** | 82 (10) | 2,987 (65 / 0.0218) | **691 (41)** | **27,179 (281 / 0.0103)** |
+| **Validation (15%)** | 18 (2) | 846 (14 / 0.0165) | **148 (9)** | **5,466 (63 / 0.0115)** |
+| **Test (15%)** | 18 (2) | 782 (13 / 0.0166) | **149 (9)** | **5,625 (63 / 0.0112)** |
+| **Total Eligible** | **118 (14)** | **4,615 (92)** | **988 (59)** | **38,270 (407)** |
+
+### Governance & Leakage Safeguards
+1. **Strict Partition Isolation**: Imputation medians (`train_medians`), probability calibration (`Platt Scaling` vs. `Isotonic Calibration`), and decision thresholds (`calibrated_threshold`) are fitted strictly on `train` (medians) or `val` (calibrator and operating threshold). Held-out `test` is evaluated once read-only.
+2. **Stratified TreeSHAP Background**: `shap.TreeExplainer` uses a 200-row stratified background subsample from `train.csv` preserving positive sepsis prevalence alongside non-sepsis stays, replacing the previous unstratified `iloc[:100]` slice.
+3. **Clinical Monotonicity Constraints**: LightGBM enforces `monotone_constraints_method="advanced"` (`+1` for Lactate/Shock Index/MAP hypoperfusion depth/qSOFA/HR/Resp/temp deviation/Creatinine/BUN; `-1` for MAP/SBP/O2Sat/Platelets/HCO3) to prevent missingness-imputation tree inversions.

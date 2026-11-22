@@ -8,10 +8,11 @@ If network is unavailable, falls back to generating high-fidelity synthetic ICU 
 import os
 import sys
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RAW_DIR = REPO_ROOT / "data" / "icu_raw"
@@ -28,66 +29,119 @@ COLUMNS = [
     "HospAdmTime", "ICULOS", "SepsisLabel"
 ]
 
-def acquire_physionet_cohort(target_count: int = 150) -> Tuple[int, bool]:
+
+def _is_valid_psv_file(path: Path) -> bool:
+    """Validate that an existing PSV file has expected PhysioNet header and minimum rows."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+        return len(lines) >= 6 and "HR|O2Sat" in lines[0]
+    except OSError:
+        return False
+
+
+def _download_single_stay(folder: str, fname: str, dest_dir: Path) -> Tuple[str, bool, str]:
     """
-    Downloads real clinical ICU time series from PhysioNet Challenge 2019 mirror.
-    Returns (num_downloaded, is_real_data).
+    Downloads a single PhysioNet Challenge 2019 .psv file unless a valid copy already exists.
+    Returns (fname, success, status_tag).
+    """
+    dest_path = dest_dir / fname
+    if dest_path.exists() and _is_valid_psv_file(dest_path):
+        return fname, True, "skipped_existing"
+
+    url = f"{BASE_URL}/{folder}/{fname}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "OmniMed-Insight-Research/2.0"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            content = resp.read().decode("utf-8")
+        lines = [line.strip() for line in content.strip().split("\n") if line.strip()]
+        if len(lines) >= 6 and "HR|O2Sat" in lines[0]:
+            tmp_path = dest_dir / f".{fname}.tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            tmp_path.replace(dest_path)
+            return fname, True, "downloaded"
+        return fname, False, "invalid_payload"
+    except Exception:
+        return fname, False, "request_failed"
+
+
+def acquire_physionet_cohort(target_count: int = 1000, max_workers: int = 16) -> Tuple[int, bool]:
+    """
+    Concurrently downloads real clinical ICU time series from PhysioNet Challenge 2019 S3 open mirror
+    (500 from training_setA/p000001..p000500.psv and 500 from training_setB/p100001..p100500.psv).
+    Never mixes synthetic trajectories into real PhysioNet downloads.
+    Returns (num_real_stays, is_real_data).
     """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # Check if we already have sufficient raw files
-    existing_files = list(RAW_DIR.glob("*.psv"))
-    if len(existing_files) >= target_count:
-        print(f"[Dataset] Found {len(existing_files)} existing raw PSV records in {RAW_DIR}.")
-        return len(existing_files), True
 
-    print(f"[Dataset] Downloading representative cohort of {target_count} patient files from PhysioNet Open Data...")
-    
-    # We sample a known mix of patients from Hospital System A and B
-    # In PhysioNet 2019, patient files are named p000001.psv ... p020000.psv (Set A)
-    # and p100001.psv ... p120000.psv (Set B)
-    # We choose candidates and check for SepsisLabel presence to ensure balanced cohort
-    downloaded = 0
-    candidate_ids = []
-    
-    # Mix from Set A (Hospital A) and Set B (Hospital B)
-    for i in range(1, 100):
-        candidate_ids.append(("training_setA", f"p{i:06d}.psv"))
-    for i in range(100001, 100100):
-        candidate_ids.append(("training_setB", f"p{i}.psv"))
-    # Also select some known positive patients in early challenge numbering
-    for i in [9, 14, 25, 43, 56, 72, 85, 102, 118, 140, 162, 185, 100010, 100030, 100075, 100120, 100150]:
-        folder = "training_setA" if i < 100000 else "training_setB"
-        candidate_ids.append((folder, f"p{i:06d}.psv" if i < 100000 else f"p{i}.psv"))
+    # Only inspect real PhysioNet files (never count synthetic files as real data)
+    real_existing = sorted(
+        p for p in RAW_DIR.glob("*.psv")
+        if not p.name.startswith("pat_synth_") and _is_valid_psv_file(p)
+    )
+    if len(real_existing) >= target_count:
+        print(f"[Dataset] Found {len(real_existing)} existing valid real PhysioNet PSV records in {RAW_DIR}.")
+        return len(real_existing), True
 
-    for folder, fname in candidate_ids:
-        if downloaded >= target_count:
-            break
-        dest_path = RAW_DIR / fname
-        if dest_path.exists():
-            downloaded += 1
-            continue
-        url = f"{BASE_URL}/{folder}/{fname}"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                content = resp.read().decode("utf-8")
-                # Basic validation
-                lines = content.strip().split("\n")
-                if len(lines) >= 6 and "HR|O2Sat" in lines[0]:
-                    with open(dest_path, "w", encoding="utf-8") as f:
-                        f.write(content)
-                    downloaded += 1
-                    if downloaded % 25 == 0:
-                        print(f"  Downloaded {downloaded}/{target_count} patient files...")
-        except Exception as e:
-            continue
+    n_set_a = min(500, (target_count + 1) // 2)
+    n_set_b = min(500, target_count - n_set_a)
 
-    if downloaded >= 30:
-        print(f"[Dataset] Successfully acquired {downloaded} real patient time-series records from PhysioNet.")
-        return downloaded, True
-    
-    print("[Dataset] Warning: Unable to download sufficient real records over network. Generating calibrated synthetic dataset...")
+    # Interleave Hospital A and Hospital B candidates so any partial subset stays balanced
+    candidate_ids: List[Tuple[str, str]] = []
+    max_pairs = max(n_set_a, n_set_b)
+    for idx in range(max_pairs):
+        if idx < n_set_a:
+            candidate_ids.append(("training_setA", f"p{idx + 1:06d}.psv"))
+        if idx < n_set_b:
+            candidate_ids.append(("training_setB", f"p{100001 + idx}.psv"))
+
+    print(
+        f"[Dataset] Acquiring up to {len(candidate_ids)} real ICU stays "
+        f"({n_set_a} Hospital A + {n_set_b} Hospital B) with {max_workers} workers..."
+    )
+
+    skipped_count = 0
+    downloaded_new = 0
+    failed_count = 0
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_download_single_stay, folder, fname, RAW_DIR)
+            for folder, fname in candidate_ids
+        ]
+        completed = 0
+        for future in as_completed(futures):
+            _fname, ok, status_tag = future.result()
+            completed += 1
+            if ok:
+                if status_tag == "skipped_existing":
+                    skipped_count += 1
+                else:
+                    downloaded_new += 1
+            else:
+                failed_count += 1
+
+            if completed % 100 == 0 or completed == len(candidate_ids):
+                print(
+                    f"  Progress {completed}/{len(candidate_ids)} | "
+                    f"existing={skipped_count}, new={downloaded_new}, failed={failed_count}"
+                )
+
+    valid_real_files = sorted(
+        p for p in RAW_DIR.glob("*.psv")
+        if not p.name.startswith("pat_synth_") and _is_valid_psv_file(p)
+    )
+    total_real = len(valid_real_files)
+
+    if total_real >= 30:
+        print(
+            f"[Dataset] Successfully verified {total_real} real PhysioNet patient time-series records "
+            f"(new={downloaded_new}, reused={skipped_count})."
+        )
+        return total_real, True
+
+    print("[Dataset] Warning: Real PhysioNet downloads < 30; falling back to isolated offline synthetic cohort...")
     return generate_synthetic_cohort(target_count)
 
 
@@ -224,5 +278,5 @@ def generate_synthetic_cohort(count: int = 100) -> Tuple[int, bool]:
     return generated, False
 
 if __name__ == "__main__":
-    count, is_real = acquire_physionet_cohort(target_count=120)
+    count, is_real = acquire_physionet_cohort(target_count=1000)
     print(f"Acquisition complete: {count} patients (Real Data: {is_real})")

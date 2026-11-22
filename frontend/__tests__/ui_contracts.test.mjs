@@ -26,6 +26,12 @@ test("MedicalImageViewer implements zoom, pan, LUT invert, Grad-CAM opacity slid
   assert.match(viewerSrc, /SOURCE INTEGRITY: UNALTERED READ-ONLY/);
   assert.match(viewerSrc, /clinical_warning/);
   assert.match(viewerSrc, /localization_limitation/);
+  assert.match(viewerSrc, /Terkalibrasi Empiris/);
+  assert.match(viewerSrc, /Checkpoint Kustom \(Belum Terkalibrasi\)/);
+  assert.match(viewerSrc, /RESEARCH_UNVERIFIED/);
+  assert.match(viewerSrc, /Visual Mini Calibration \/ Reliability Check/);
+  assert.match(viewerSrc, /Expected Confidence/);
+  assert.match(viewerSrc, /Empirical Accuracy/);
 });
 
 test("Main clinical workspace enforces RBAC visibility, provenance citations, and synthetic data disclosures", () => {
@@ -35,6 +41,8 @@ test("Main clinical workspace enforces RBAC visibility, provenance citations, an
   );
   assert.match(pageSrc, /DECISION SUPPORT ONLY/);
   assert.match(pageSrc, /RESEARCH_UNVERIFIED/);
+  assert.match(pageSrc, /Terkalibrasi Empiris/);
+  assert.match(pageSrc, /Checkpoint Kustom \(Belum Terkalibrasi\)/);
   assert.match(pageSrc, /Evidence Provenance Chain/);
   assert.match(pageSrc, /Test Cross-Patient IDOR Guard/);
   assert.match(pageSrc, /aria-label="Primary Workspace Navigation"/);
@@ -55,5 +63,13 @@ test("IcuEarlyWarningWorkspace implements 6-12h horizon, SHAP attributions, aler
   assert.match(icuSrc, /Acknowledge Clinical Deterioration Alert/);
   assert.match(icuSrc, /Longitudinal Observations & Temporal Trends/);
   assert.match(icuSrc, /Measured Metrics on Held-Out Test Set/);
+  assert.match(icuSrc, /Monotonic Clinical Guard: ACTIVE/);
+  assert.match(icuSrc, /Lactate/);
+  assert.match(icuSrc, /Shock Index/);
+  assert.match(icuSrc, /MAP/);
+  assert.match(icuSrc, /Terkalibrasi Empiris/);
+  assert.match(icuSrc, /Riset Belum Terkalibrasi/);
+  assert.match(icuSrc, /Visual Mini Calibration \/ Reliability Check/);
+  assert.match(icuSrc, /ICU Calibration Reliability Curve/);
 });
 

@@ -98,6 +98,82 @@ pub async fn system_status(
         .map(|r| r.status().is_success())
         .unwrap_or(false);
 
+    let img_cal_status = ai_details
+        .get("calibration_status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("RESEARCH_UNVERIFIED");
+    let img_cal_method = ai_details
+        .get("calibration_method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("NONE_UNCALIBRATED");
+    let img_ece = ai_details.get("ece_score").and_then(|v| v.as_f64());
+    let img_ckpt_sha = ai_details
+        .get("checkpoint_sha256")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let img_provenance = ai_details
+        .get("checkpoint_data_provenance")
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNINITIALIZED_RESEARCH_BACKBONE");
+    let icu_calibration = ai_details
+        .get("icu_calibration")
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    let img_status = if !ai_online {
+        "SERVICE_OFFLINE".to_string()
+    } else {
+        match (img_cal_status, img_ece) {
+            ("CALIBRATED_CHECKPOINT", Some(ece)) => {
+                format!("IMPLEMENTED (CALIBRATED_CHECKPOINT • ECE={:.4})", ece)
+            }
+            ("CUSTOM_CHECKPOINT", _) => "IMPLEMENTED (CUSTOM_CHECKPOINT)".to_string(),
+            _ => "IMPLEMENTED (Research Calibration)".to_string(),
+        }
+    };
+    let img_notes = format!(
+        "Executes real forward/backward hooks on features.denseblock4. Calibration: {} ({}, ECE: {}, Provenance: {}, SHA-256: {}).",
+        img_cal_status,
+        img_cal_method,
+        img_ece
+            .map(|v| format!("{:.4}", v))
+            .unwrap_or_else(|| "N/A".into()),
+        img_provenance,
+        img_ckpt_sha
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|s| if s.len() > 12 { &s[..12] } else { s })
+            .unwrap_or("NONE"),
+    );
+
+    let icu_cal_method = icu_calibration
+        .get("calibration_method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("NONE_UNCALIBRATED");
+    let icu_ece = icu_calibration.get("ece_score").and_then(|v| v.as_f64());
+    let icu_monotone = icu_calibration
+        .get("monotone_constraints_active")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let icu_status = if !ai_online {
+        "SERVICE_OFFLINE".to_string()
+    } else if icu_monotone && icu_ece.is_some() {
+        format!(
+            "IMPLEMENTED (Calibrated {} • Monotonic Guard ACTIVE)",
+            icu_cal_method
+        )
+    } else {
+        format!("IMPLEMENTED ({})", icu_cal_method)
+    };
+    let icu_notes = format!(
+        "6-12h Sepsis-3 LightGBM + Tree SHAP. Calibration: {} (ECE: {}), Monotonic Clinical Guard: {}.",
+        icu_cal_method,
+        icu_ece
+            .map(|v| format!("{:.4}", v))
+            .unwrap_or_else(|| "N/A".into()),
+        if icu_monotone { "ACTIVE" } else { "INACTIVE" },
+    );
+
     Ok(Json(json!({
         "rust_backend": {
             "status": "ONLINE",
@@ -128,8 +204,19 @@ pub async fn system_status(
             },
             {
                 "feature": "PyTorch DenseNet-121 Vision Inference + Real Grad-CAM Attribution",
-                "status": if ai_online { "IMPLEMENTED (Research Calibration)" } else { "SERVICE_OFFLINE" },
-                "notes": "Executes real forward/backward hooks on features.denseblock4. Marked as RESEARCH_UNVERIFIED (not FDA-cleared)."
+                "status": img_status,
+                "notes": img_notes,
+                "calibration_status": img_cal_status,
+                "calibration_method": img_cal_method,
+                "ece_score": img_ece,
+                "checkpoint_sha256": img_ckpt_sha,
+                "checkpoint_data_provenance": img_provenance
+            },
+            {
+                "feature": "LightGBM ICU Sepsis-3 Early Warning + Tree SHAP",
+                "status": icu_status,
+                "notes": icu_notes,
+                "icu_calibration": icu_calibration
             },
             {
                 "feature": "Evidence-Grounded Report Drafting with Source Provenance",
@@ -1382,6 +1469,8 @@ pub async fn trigger_case_analysis(
             let xai_meta_str = serde_json::to_string(&ai_out.xai).unwrap_or_else(|_| "{}".into());
             let limitations_str =
                 serde_json::to_string(&ai_out.limitations).unwrap_or_else(|_| "[]".into());
+            let reliability_bins_str =
+                serde_json::to_string(&ai_out.reliability_bins).unwrap_or_else(|_| "[]".into());
             let img_meta_str =
                 serde_json::to_string(&ai_out.image_metadata).unwrap_or_else(|_| "{}".into());
             let overlay_sha = ai_out
@@ -1398,6 +1487,13 @@ pub async fn trigger_case_analysis(
                     model_version = ?,
                     status = 'COMPLETED',
                     calibration_status = ?,
+                    calibration_method = ?,
+                    ece_score = ?,
+                    brier_score = ?,
+                    nll_score = ?,
+                    checkpoint_sha256 = ?,
+                    checkpoint_data_provenance = ?,
+                    reliability_bins_json = ?,
                     execution_device = ?,
                     predicted_class_code = ?,
                     predicted_class_label = ?,
@@ -1417,6 +1513,13 @@ pub async fn trigger_case_analysis(
             .bind(&ai_out.model_id)
             .bind(&ai_out.model_version)
             .bind(&ai_out.calibration_status)
+            .bind(&ai_out.calibration_method)
+            .bind(ai_out.ece_score)
+            .bind(ai_out.brier_score)
+            .bind(ai_out.nll_score)
+            .bind(&ai_out.checkpoint_sha256)
+            .bind(&ai_out.checkpoint_data_provenance)
+            .bind(&reliability_bins_str)
             .bind(&ai_out.execution_device)
             .bind(&ai_out.predicted_class_code)
             .bind(&ai_out.predicted_class_label)
@@ -1715,13 +1818,37 @@ pub async fn generate_report_draft(
                 })
                 .unwrap_or_else(|| "Distributed spatial activation".into());
 
+            let ece_display = j
+                .ece_score
+                .map(|e| format!("{:.4}", e))
+                .unwrap_or_else(|| "N/A".into());
+            let ckpt_sha_display = j
+                .checkpoint_sha256
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    if s.len() > 16 {
+                        format!("{}...", &s[..16])
+                    } else {
+                        s.to_string()
+                    }
+                })
+                .unwrap_or_else(|| "NONE (Research Init)".into());
+
             provenance.push(ProvenanceCitation {
                 ref_id: format!("AI-{}", &j.id[..12]),
                 source_type: "AI_MODEL_OUTPUT".into(),
                 title: format!("{} ({})", j.model_id, j.model_version),
                 summary: format!(
-                    "Predicted: {} ({:.1}%), Uncertainty: {} (Entropy {:.2} bits), Calibration: {}",
-                    pred_label, prob_pct, unc_level, entropy, j.calibration_status
+                    "Predicted: {} ({:.1}%), Uncertainty: {} (Entropy {:.2} bits), Calibration: {} ({}, ECE: {}), Checkpoint SHA-256: {}",
+                    pred_label,
+                    prob_pct,
+                    unc_level,
+                    entropy,
+                    j.calibration_status,
+                    j.calibration_method,
+                    ece_display,
+                    ckpt_sha_display
                 ),
                 timestamp: j.completed_at.clone().unwrap_or_else(|| j.created_at.clone()),
                 verifier: j.execution_device.clone(),
@@ -1741,7 +1868,8 @@ pub async fn generate_report_draft(
             });
 
             let mf = format!(
-                "[AI-{}] Model `{}` (version `{}`, calibration `{}`) evaluated the {} ({}) scan on `{}`.\n\
+                "[AI-{}] Model `{}` (version `{}`, calibration `{}` / method `{}`, ECE `{}`) evaluated the {} ({}) scan on `{}`.\n\
+                 - Checkpoint SHA-256: `{}` (Provenance: `{}`)\n\
                  - Top Candidate Pattern: {} (`{}`)\n\
                  - Model Score / Probability: {:.1}%\n\
                  - Predictive Shannon Entropy: {:.2} / 2.00 bits\n\
@@ -1750,9 +1878,13 @@ pub async fn generate_report_draft(
                 j.model_id,
                 j.model_version,
                 j.calibration_status,
+                j.calibration_method,
+                ece_display,
                 case_row.modality,
                 case_row.body_part,
                 j.execution_device,
+                ckpt_sha_display,
+                j.checkpoint_data_provenance,
                 pred_label,
                 pred_code,
                 prob_pct,
@@ -1776,10 +1908,14 @@ pub async fn generate_report_draft(
             );
 
             let lim_sec = format!(
-                "1. Calibration Status: {} (`{}`). This model is not FDA/CE cleared for autonomous diagnosis.\n\
+                "1. Calibration & Provenance Status: {} / `{}` (ECE: {}, Checkpoint SHA-256: `{}`, Provenance: `{}`). This model is not FDA/CE cleared for autonomous diagnosis.\n\
                  2. Spatial Attribution Limitation: Grad-CAM provides coarse 7x7 feature attribution and must not be used for pixel-level lesion boundary measurement.\n\
                  3. Clinical Correlation Required: All findings must be correlated with physical examination, prior imaging studies, and laboratory trends by an authorized physician.",
-                j.calibration_status, j.model_version
+                j.calibration_status,
+                j.calibration_method,
+                ece_display,
+                ckpt_sha_display,
+                j.checkpoint_data_provenance
             );
 
             (mf, xai_sec, lim_sec, Some(j.id.clone()))
@@ -2947,14 +3083,18 @@ pub async fn trigger_icu_prediction(
     let now = Utc::now().to_rfc3339();
     let shap_json = serde_json::to_string(&ai_res.top_shap_attributions).unwrap_or_else(|_| "[]".into());
     let vital_json = serde_json::to_string(&ai_res.vital_signs_summary).unwrap_or_else(|_| "{}".into());
+    let reliability_bins_json =
+        serde_json::to_string(&ai_res.reliability_bins).unwrap_or_else(|_| "[]".into());
 
     sqlx::query(
         r#"
         INSERT INTO icu_predictions (
             id, stay_id, patient_id, requested_by, prediction_time, prediction_horizon,
             risk_score, risk_tier, decision_threshold, model_id, model_version,
-            data_quality_status, stale_warning, shap_attributions_json, vital_summary_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            data_quality_status, stale_warning, calibration_method, ece_score,
+            calibrated_threshold, monotone_constraints_active, reliability_bins_json,
+            shap_attributions_json, vital_summary_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&pred_id)
@@ -2970,6 +3110,11 @@ pub async fn trigger_icu_prediction(
     .bind(&ai_res.model_version)
     .bind(&ai_res.data_quality_status)
     .bind(&ai_res.stale_observations_warning)
+    .bind(&ai_res.calibration_method)
+    .bind(ai_res.ece_score)
+    .bind(ai_res.calibrated_threshold)
+    .bind(if ai_res.monotone_constraints_active { 1i64 } else { 0i64 })
+    .bind(&reliability_bins_json)
     .bind(&shap_json)
     .bind(&vital_json)
     .bind(&now)
@@ -3044,6 +3189,11 @@ pub async fn trigger_icu_prediction(
         "decision_threshold": ai_res.decision_threshold,
         "data_quality_status": ai_res.data_quality_status,
         "stale_warning": ai_res.stale_observations_warning,
+        "calibration_method": ai_res.calibration_method,
+        "ece_score": ai_res.ece_score,
+        "calibrated_threshold": ai_res.calibrated_threshold,
+        "monotone_constraints_active": ai_res.monotone_constraints_active,
+        "reliability_bins": ai_res.reliability_bins,
         "top_shap_attributions": ai_res.top_shap_attributions,
         "vital_summary": ai_res.vital_signs_summary,
         "generated_alert_id": generated_alert_id,

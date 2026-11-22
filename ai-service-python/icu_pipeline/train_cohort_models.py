@@ -7,6 +7,7 @@ Benchmark Evaluation, and SHAP Explainability.
 import json
 import logging
 from pathlib import Path
+import sys
 from typing import Dict, Any, List, Tuple
 
 import joblib
@@ -29,12 +30,19 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+AI_SERVICE_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = AI_SERVICE_ROOT.parent
+if str(AI_SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(AI_SERVICE_ROOT))
+
+from app.calibration import compute_ece, fit_and_compare_binary_calibrators
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("cohort_pipeline")
 
-RAW_CSV_PATH = Path("data/archive2/sepsis_icu_synthetic.csv")
-PROCESSED_DIR = Path("data/icu_cohort_processed")
-MODELS_DIR = Path("ai-service-python/models/icu")
+RAW_CSV_PATH = REPO_ROOT / "data" / "archive2" / "sepsis_icu_synthetic.csv"
+PROCESSED_DIR = REPO_ROOT / "data" / "icu_cohort_processed"
+MODELS_DIR = AI_SERVICE_ROOT / "models" / "icu"
 
 # Columns excluded from predictor matrix to prevent post-event intervention leakage,
 # post-stay outcome leakage, composite score circularity, and synthetic generator proxy shortcuts.
@@ -189,10 +197,45 @@ def split_cohort_data(
     return train_df, val_df, test_df, feature_cols
 
 
+def find_optimal_cohort_threshold(y_true: np.ndarray, y_prob: np.ndarray, min_specificity: float = 0.90) -> float:
+    """
+    Selects operating threshold strictly on validation predictions maximizing F1 score
+    subject to a high-specificity clinical alert floor (fallback to unconstrained F1 if unmet).
+    """
+    candidates = np.unique(
+        np.concatenate(
+            [
+                np.quantile(y_prob, np.linspace(0.50, 0.96, 47)),
+                np.linspace(0.05, 0.90, 86),
+            ]
+        )
+    )
+    best_thresh = 0.5
+    best_f1 = -1.0
+    fallback_thresh = 0.5
+    fallback_f1 = -1.0
+
+    for t in candidates:
+        preds = (y_prob >= t).astype(int)
+        cm = confusion_matrix(y_true, preds, labels=[0, 1])
+        tn, fp = int(cm[0, 0]), int(cm[0, 1])
+        spec = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+        score = float(f1_score(y_true, preds, zero_division=0))
+        if score > fallback_f1:
+            fallback_f1 = score
+            fallback_thresh = float(t)
+        if spec >= min_specificity and score > best_f1:
+            best_f1 = score
+            best_thresh = float(t)
+
+    return float(best_thresh if best_f1 >= 0.0 else fallback_thresh)
+
+
 def evaluate_predictions(y_true: np.ndarray, y_prob: np.ndarray, model_name: str) -> Dict[str, Any]:
     auroc = float(roc_auc_score(y_true, y_prob))
     auprc = float(average_precision_score(y_true, y_prob))
     brier = float(brier_score_loss(y_true, y_prob))
+    ece_score, _ = compute_ece(y_true, y_prob, n_bins=10, multiclass=False)
 
     best_thresh = 0.5
     best_f1 = -1.0
@@ -214,6 +257,7 @@ def evaluate_predictions(y_true: np.ndarray, y_prob: np.ndarray, model_name: str
         "auroc": round(auroc, 4),
         "auprc": round(auprc, 4),
         "brier_score": round(brier, 4),
+        "ece_score": ece_score,
         "threshold_used": round(best_thresh, 2),
         "sensitivity": round(sens, 4),
         "specificity": round(spec, 4),
@@ -300,10 +344,31 @@ def train_and_benchmark_models(
         eval_metric="auc",
         callbacks=[lgb.early_stopping(stopping_rounds=25, verbose=False)],
     )
-    lgb_probs = lgb_clf.predict_proba(X_test_df)[:, 1]
-    metrics["lightgbm"] = evaluate_predictions(
-        y_test, lgb_probs, "LightGBM Gradient Boosted Decision Trees"
+
+    logger.info("Calibrating Champion LightGBM exclusively on validation split (Platt vs Isotonic)...")
+    cal_result = fit_and_compare_binary_calibrators(
+        lgb_clf,
+        X_val_df,
+        y_val,
+        X_test_df,
+        y_test,
+        threshold_finder_fn=find_optimal_cohort_threshold,
     )
+    selected_test = cal_result["selected_test_metrics"]
+    metrics["lightgbm"] = {
+        "auroc": selected_test["auroc"],
+        "auprc": selected_test["auprc"],
+        "brier_score": selected_test["brier_score"],
+        "nll_score": selected_test["nll_score"],
+        "ece_score": selected_test["ece_score"],
+        "threshold_used": selected_test["threshold_used"],
+        "sensitivity": selected_test["sensitivity"],
+        "specificity": selected_test["specificity"],
+        "precision": selected_test["precision"],
+        "f1_score": selected_test["f1_score"],
+        "confusion_matrix": selected_test["confusion_matrix"],
+        "model_name": f"LightGBM Gradient Boosted Decision Trees ({cal_result['best_method']})",
+    }
 
     # 5. XGBoost Classifier
     logger.info("Training XGBoost...")
@@ -353,11 +418,32 @@ def train_and_benchmark_models(
         json.dump(metrics, f, indent=2)
     logger.info("Metrics comparison saved to cohort_metrics_comparison.json")
 
-    # Select Champion: LightGBM
-    logger.info("Fitting SHAP TreeExplainer on Champion LightGBM model...")
+    # Select Champion: Raw LightGBM booster (for TreeSHAP) + Post-hoc Calibrator
+    logger.info("Fitting SHAP TreeExplainer on raw Champion LightGBM model with stratified background...")
     joblib.dump(lgb_clf, MODELS_DIR / "cohort_champion_model.joblib")
+    joblib.dump(cal_result["best_calibrator"], MODELS_DIR / "cohort_calibrator.joblib")
 
-    background_sample = X_train_df.iloc[:200]
+    cohort_calibration_report = {
+        "best_method": cal_result["best_method"],
+        "calibrated_threshold": cal_result["calibrated_threshold"],
+        "monotone_constraints_active": False,
+        "val_comparison": cal_result["val_comparison"],
+        "test_comparison": cal_result["test_comparison"],
+        "selected_test_metrics": cal_result["selected_test_metrics"],
+        "reliability_bins": cal_result["reliability_bins"],
+    }
+    with open(MODELS_DIR / "cohort_calibration_metrics.json", "w", encoding="utf-8") as f:
+        json.dump(cohort_calibration_report, f, indent=2)
+
+    if len(X_train_df) > 200 and len(np.unique(y_train)) > 1:
+        _, background_sample = train_test_split(
+            X_train_df,
+            test_size=200,
+            stratify=y_train,
+            random_state=42,
+        )
+    else:
+        background_sample = X_train_df
     explainer = shap.TreeExplainer(lgb_clf, data=background_sample)
     joblib.dump(explainer, MODELS_DIR / "cohort_shap_explainer.joblib")
 
@@ -382,6 +468,16 @@ def train_and_benchmark_models(
         "dataset_source": "Archive2 Sepsis ICU Synthetic Cohort (5,000 patients, Anti-Leakage Filtered)",
         "algorithm": "lightgbm",
         "target_endpoint": "sepsis_label",
+        "decision_threshold": cal_result["calibrated_threshold"],
+        "calibrated_threshold": cal_result["calibrated_threshold"],
+        "calibration_method": cal_result["best_method"],
+        "ece_score": cal_result["selected_test_metrics"]["ece_score"],
+        "monotone_constraints_active": False,
+        "reliability_bins": cal_result["reliability_bins"],
+        "calibration_comparison": {
+            "val": cal_result["val_comparison"],
+            "test": cal_result["test_comparison"],
+        },
         "test_metrics": metrics["lightgbm"],
         "chf_secondary_metrics": metrics.get("chf_secondary_endpoint"),
         "top_features": feature_importances[:25],
@@ -398,7 +494,7 @@ def train_and_benchmark_models(
     for name, res in metrics.items():
         logger.info(
             f"{name}: AUROC={res['auroc']}, AUPRC={res['auprc']}, Brier={res['brier_score']}, "
-            f"Sens={res['sensitivity']}, Spec={res['specificity']}"
+            f"ECE={res['ece_score']}, Sens={res['sensitivity']}, Spec={res['specificity']}"
         )
 
 

@@ -20,8 +20,23 @@ import {
   AnalysisJobRecord,
   fetchAuthorizedImageBlobUrl,
   MedicalImageRecord,
+  ReliabilityBin,
   XaiMetadata,
 } from "@/lib/api";
+
+function parseReliabilityBins(
+  bins?: ReliabilityBin[],
+  binsJson?: string
+): ReliabilityBin[] {
+  if (Array.isArray(bins) && bins.length > 0) return bins;
+  if (!binsJson) return [];
+  try {
+    const parsed = JSON.parse(binsJson);
+    return Array.isArray(parsed) ? (parsed as ReliabilityBin[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 interface MedicalImageViewerProps {
   image: MedicalImageRecord;
@@ -55,6 +70,23 @@ export default function MedicalImageViewer({
       return null;
     }
   }, [activeJob]);
+
+  const reliabilityBins: ReliabilityBin[] = React.useMemo(
+    () =>
+      parseReliabilityBins(
+        activeJob?.reliability_bins,
+        activeJob?.reliability_bins_json
+      ),
+    [activeJob]
+  );
+
+  const calStatus = activeJob?.calibration_status || "RESEARCH_UNVERIFIED";
+  const calMethod = activeJob?.calibration_method || "NONE_UNCALIBRATED";
+  const eceScore =
+    typeof activeJob?.ece_score === "number" ? activeJob.ece_score : null;
+  const ckptSha = activeJob?.checkpoint_sha256 || null;
+  const ckptProvenance =
+    activeJob?.checkpoint_data_provenance || "UNINITIALIZED_RESEARCH_BACKBONE";
 
   useEffect(() => {
     let revokedRaw: string | null = null;
@@ -511,6 +543,129 @@ export default function MedicalImageViewer({
             </div>
           </div>
         )}
+
+        {/* Calibration Status, Checkpoint Provenance & Visual Mini Calibration / Reliability Check */}
+        <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-bold text-slate-900">
+              Visual Mini Calibration / Reliability Check
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {calStatus === "CALIBRATED_CHECKPOINT" && eceScore !== null ? (
+                <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
+                  Terkalibrasi Empiris (ECE = {eceScore.toFixed(4)})
+                </span>
+              ) : calStatus === "CUSTOM_CHECKPOINT" ? (
+                <span className="rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-900">
+                  Checkpoint Kustom (Belum Terkalibrasi)
+                </span>
+              ) : (
+                <span className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+                  Riset Belum Terkalibrasi (RESEARCH_UNVERIFIED)
+                </span>
+              )}
+
+              {calMethod !== "NONE_UNCALIBRATED" && (
+                <span className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-700">
+                  {calMethod}
+                </span>
+              )}
+
+              {ckptSha && (
+                <span
+                  className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-700"
+                  title={`Checkpoint SHA-256: ${ckptSha}`}
+                >
+                  SHA-256: {ckptSha.slice(0, 12)}…
+                </span>
+              )}
+
+              <span
+                className={`rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+                  ckptProvenance === "EXTERNAL_CLINICAL_COHORT"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-amber-200 bg-amber-50 text-amber-900"
+                }`}
+              >
+                {ckptProvenance}
+              </span>
+            </div>
+          </div>
+
+          {(eceScore !== null ||
+            typeof activeJob?.brier_score === "number" ||
+            typeof activeJob?.nll_score === "number") && (
+            <div className="flex flex-wrap gap-2 text-[11px] font-mono text-slate-700">
+              {eceScore !== null && (
+                <span className="rounded bg-slate-50 px-2 py-0.5 border border-slate-200">
+                  ECE: <strong>{eceScore.toFixed(4)}</strong>
+                </span>
+              )}
+              {typeof activeJob?.brier_score === "number" && (
+                <span className="rounded bg-slate-50 px-2 py-0.5 border border-slate-200">
+                  Brier: <strong>{activeJob.brier_score.toFixed(4)}</strong>
+                </span>
+              )}
+              {typeof activeJob?.nll_score === "number" && (
+                <span className="rounded bg-slate-50 px-2 py-0.5 border border-slate-200">
+                  NLL: <strong>{activeJob.nll_score.toFixed(4)}</strong>
+                </span>
+              )}
+            </div>
+          )}
+
+          {reliabilityBins.length > 0 ? (
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between text-[11px] text-slate-600">
+                <span>Expected Confidence vs Empirical Accuracy ({reliabilityBins.length} active bins)</span>
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-xs bg-sky-500" /> Expected Confidence
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-xs bg-emerald-500" /> Empirical Accuracy
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {reliabilityBins.map((bin, idx) => {
+                  const confPct = Math.max(0, Math.min(100, bin.avg_confidence * 100));
+                  const accPct = Math.max(0, Math.min(100, bin.empirical_accuracy * 100));
+                  return (
+                    <div key={idx} className="space-y-0.5 text-[10px]">
+                      <div className="flex justify-between font-mono text-slate-600">
+                        <span>
+                          Bin [{bin.bin_lower.toFixed(1)}–{bin.bin_upper.toFixed(1)}] (n={bin.count})
+                        </span>
+                        <span>
+                          Conf {confPct.toFixed(1)}% vs Acc {accPct.toFixed(1)}% (gap {bin.gap.toFixed(3)})
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-0.5">
+                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-sky-500"
+                            style={{ width: `${Math.max(2, confPct)}%` }}
+                          />
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-emerald-500"
+                            style={{ width: `${Math.max(2, accPct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="rounded border border-amber-200 bg-amber-50/70 px-2.5 py-1.5 text-[11px] text-amber-900">
+              Belum ada kurva reliabilitas empiris untuk pekerjaan ini. Nilai persentase adalah skor relatif riset yang belum terkalibrasi secara klinis.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

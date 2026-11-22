@@ -33,7 +33,141 @@ import {
   IcuShapItem,
   IcuStayRecord,
   PatientRecord,
+  ReliabilityBin,
 } from "@/lib/api";
+
+function parseIcuReliabilityBins(
+  bins?: ReliabilityBin[],
+  binsJson?: string
+): ReliabilityBin[] {
+  if (Array.isArray(bins) && bins.length > 0) return bins;
+  if (!binsJson) return [];
+  try {
+    const parsed = JSON.parse(binsJson);
+    return Array.isArray(parsed) ? (parsed as ReliabilityBin[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function ReliabilityCurveMini({
+  bins,
+  calibrationMethod,
+  eceScore,
+}: {
+  bins: ReliabilityBin[];
+  calibrationMethod: string;
+  eceScore: number | null;
+}) {
+  const isCalibrated =
+    calibrationMethod !== "NONE_UNCALIBRATED" && eceScore !== null;
+  const totalCount = bins.reduce((acc, b) => acc + (Number(b.count) || 0), 0);
+  const sorted = [...bins].sort((a, b) => a.avg_confidence - b.avg_confidence);
+
+  // SVG plot geometry (viewBox 0 0 240 120)
+  const padL = 24;
+  const padR = 12;
+  const padT = 10;
+  const padB = 20;
+  const plotW = 240 - padL - padR;
+  const plotH = 120 - padT - padB;
+  const toX = (v: number) => padL + Math.max(0, Math.min(1, v)) * plotW;
+  const toY = (v: number) => padT + (1 - Math.max(0, Math.min(1, v))) * plotH;
+
+  const points = sorted
+    .map((b) => `${toX(b.avg_confidence).toFixed(1)},${toY(b.empirical_accuracy).toFixed(1)}`)
+    .join(" ");
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="font-bold text-slate-900">
+          Visual Mini Calibration / Reliability Check
+        </span>
+        {isCalibrated ? (
+          <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
+            Terkalibrasi Empiris (ECE = {eceScore.toFixed(4)})
+          </span>
+        ) : (
+          <span className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+            Riset Belum Terkalibrasi
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-600 font-mono">
+        <span>Method: {calibrationMethod}</span>
+        <span>
+          ECE: {eceScore !== null ? eceScore.toFixed(4) : "N/A"} • {bins.length} bins (n={totalCount})
+        </span>
+      </div>
+
+      {sorted.length > 0 ? (
+        <div className="rounded border border-slate-200 bg-white p-2">
+          <svg
+            viewBox="0 0 240 120"
+            className="h-28 w-full overflow-visible"
+            role="img"
+            aria-label="ICU Calibration Reliability Curve"
+          >
+            {/* Grid */}
+            <line x1={padL} y1={toY(0.5)} x2={240 - padR} y2={toY(0.5)} stroke="#e2e8f0" strokeDasharray="2,2" />
+            <line x1={toX(0.5)} y1={padT} x2={toX(0.5)} y2={120 - padB} stroke="#e2e8f0" strokeDasharray="2,2" />
+            <rect x={padL} y={padT} width={plotW} height={plotH} fill="none" stroke="#cbd5e1" strokeWidth="1" />
+
+            {/* Ideal Diagonal y = x */}
+            <line
+              x1={toX(0)}
+              y1={toY(0)}
+              x2={toX(1)}
+              y2={toY(1)}
+              stroke="#94a3b8"
+              strokeWidth="1.2"
+              strokeDasharray="4,3"
+            />
+
+            {/* Empirical Reliability Curve */}
+            {sorted.length > 1 && (
+              <polyline
+                fill="none"
+                stroke="#0284c7"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                points={points}
+              />
+            )}
+            {sorted.map((b, idx) => (
+              <circle
+                key={idx}
+                cx={toX(b.avg_confidence)}
+                cy={toY(b.empirical_accuracy)}
+                r="3.2"
+                className="fill-sky-600 stroke-white"
+                strokeWidth="1"
+              >
+                <title>
+                  Bin [{b.bin_lower.toFixed(1)}–{b.bin_upper.toFixed(1)}]: Conf {(b.avg_confidence * 100).toFixed(1)}%, Emp Acc {(b.empirical_accuracy * 100).toFixed(1)}% (n={b.count})
+                </title>
+              </circle>
+            ))}
+
+            {/* Axis Labels */}
+            <text x={padL} y={116} fontSize="8" fill="#64748b">0.0</text>
+            <text x={240 - padR - 14} y={116} fontSize="8" fill="#64748b">1.0</text>
+            <text x={padL + plotW / 2 - 28} y={116} fontSize="8" fill="#475569">Avg Confidence</text>
+            <text x={4} y={padT + 6} fontSize="8" fill="#64748b">1.0</text>
+            <text x={4} y={120 - padB} fontSize="8" fill="#64748b">0.0</text>
+          </svg>
+        </div>
+      ) : (
+        <p className="rounded border border-amber-200 bg-amber-50/70 px-2.5 py-1.5 text-[11px] text-amber-900">
+          Reliability bins belum tersedia untuk prediksi/model ini (skor masih mentah sebelum kalibrasi pasca-pelatihan).
+        </p>
+      )}
+    </div>
+  );
+}
 
 interface IcuEarlyWarningWorkspaceProps {
   user: AuthenticatedUser | null;
@@ -217,6 +351,44 @@ export default function IcuEarlyWarningWorkspace({
       return [];
     }
   }, [latestPrediction]);
+
+  const icuCalibrationMethod =
+    latestPrediction?.calibration_method ||
+    activeModel?.calibration_method ||
+    "NONE_UNCALIBRATED";
+  const icuEceScore =
+    typeof latestPrediction?.ece_score === "number"
+      ? latestPrediction.ece_score
+      : typeof activeModel?.ece_score === "number"
+      ? activeModel.ece_score
+      : null;
+  const icuMonotoneActive = Boolean(
+    latestPrediction?.monotone_constraints_active ??
+      activeModel?.monotone_constraints_active ??
+      false
+  );
+  const icuReliabilityBins: ReliabilityBin[] = useMemo(() => {
+    const predBins = parseIcuReliabilityBins(
+      latestPrediction?.reliability_bins,
+      latestPrediction?.reliability_bins_json
+    );
+    if (predBins.length > 0) return predBins;
+    return parseIcuReliabilityBins(
+      activeModel?.reliability_bins,
+      activeModel?.reliability_bins_json
+    );
+  }, [latestPrediction, activeModel]);
+
+  const activeThresholdValue =
+    typeof latestPrediction?.calibrated_threshold === "number"
+      ? latestPrediction.calibrated_threshold
+      : typeof latestPrediction?.decision_threshold === "number"
+      ? latestPrediction.decision_threshold
+      : typeof activeModel?.calibrated_threshold === "number"
+      ? activeModel.calibrated_threshold
+      : typeof activeModel?.decision_threshold === "number"
+      ? activeModel.decision_threshold
+      : 0.0326;
 
   // Observation Filter by selected vital
   const filteredObservations = useMemo(() => {
@@ -610,13 +782,42 @@ export default function IcuEarlyWarningWorkspace({
                   </div>
                   <div className="flex justify-between text-[11px] text-slate-400">
                     <span>0.0%</span>
-                    <span className="font-semibold text-slate-600">Threshold: {((Number(latestPrediction.decision_threshold) || 0.0326) * 100).toFixed(1)}%</span>
+                    <span className="font-semibold text-slate-600">Threshold: {(activeThresholdValue * 100).toFixed(1)}%</span>
                     <span>100.0%</span>
                   </div>
                 </div>
 
+                {/* Calibration & Monotonic Clinical Guard Telemetry Badges */}
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  {icuCalibrationMethod !== "NONE_UNCALIBRATED" && icuEceScore !== null ? (
+                    <span className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-bold text-emerald-900">
+                      Terkalibrasi Empiris (ECE = {icuEceScore.toFixed(4)}) • {icuCalibrationMethod}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 font-bold text-amber-900">
+                      Riset Belum Terkalibrasi
+                    </span>
+                  )}
+                  <span
+                    title="Monotonic LightGBM constraints: Lactate ↑, Shock Index ↑, MAP ↓ strictly constrained against clinical polarity inversion."
+                    className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-bold ${
+                      icuMonotoneActive
+                        ? "border-teal-300 bg-teal-50 text-teal-900"
+                        : "border-slate-300 bg-slate-100 text-slate-700"
+                    }`}
+                  >
+                    <Shield className="h-3 w-3" />
+                    {icuMonotoneActive
+                      ? "Monotonic Clinical Guard: ACTIVE"
+                      : "Monotonic Clinical Guard: INACTIVE"}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Clinical polarity guard: <strong>Lactate ↑</strong>, <strong>Shock Index ↑</strong>, <strong>MAP ↓</strong> strictly constrained against clinical polarity inversion.
+                </p>
+
                 {/* Horizon & Freshness Badges */}
-                <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
+                <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
                   <div className="bg-slate-50 p-2.5 rounded border border-slate-200">
                     <span className="text-slate-500 block text-[11px]">Warning Horizon:</span>
                     <strong className="text-slate-800 flex items-center gap-1 mt-0.5">
@@ -632,6 +833,13 @@ export default function IcuEarlyWarningWorkspace({
                     </strong>
                   </div>
                 </div>
+
+                {/* Visual Mini Calibration / Reliability Curve */}
+                <ReliabilityCurveMini
+                  bins={icuReliabilityBins}
+                  calibrationMethod={icuCalibrationMethod}
+                  eceScore={icuEceScore}
+                />
               </div>
             ) : (
               <div className="text-center py-8 text-xs text-slate-400">
@@ -647,9 +855,21 @@ export default function IcuEarlyWarningWorkspace({
                 <Sliders className="h-4 w-4 text-indigo-600" />
                 SHAP Feature Attributions
               </h3>
-              <span className="text-[11px] bg-indigo-50 text-indigo-700 font-medium px-2 py-0.5 rounded border border-indigo-200">
-                TreeExplainer Local
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span
+                  title="Monotonic LightGBM constraints enforce Lactate ↑, Shock Index ↑, MAP ↓ against clinical polarity inversion"
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                    icuMonotoneActive
+                      ? "bg-teal-50 text-teal-800 border-teal-200"
+                      : "bg-slate-100 text-slate-600 border-slate-200"
+                  }`}
+                >
+                  {icuMonotoneActive ? "Monotonic Clinical Guard: ACTIVE" : "Monotonic Clinical Guard: INACTIVE"}
+                </span>
+                <span className="text-[11px] bg-indigo-50 text-indigo-700 font-medium px-2 py-0.5 rounded border border-indigo-200">
+                  TreeExplainer Local
+                </span>
+              </div>
             </div>
 
             {/* Plain-Language SHAP Summary Box */}
@@ -908,9 +1128,50 @@ export default function IcuEarlyWarningWorkspace({
               </div>
               <div className="bg-slate-50 p-2.5 rounded border border-slate-200">
                 <span className="text-slate-500 block">Decision Threshold:</span>
-                <strong className="text-slate-800 font-mono">{((Number(activeModel.decision_threshold) || 0) * 100).toFixed(2)}%</strong>
+                <strong className="text-slate-800 font-mono">
+                  {((Number(activeModel.calibrated_threshold ?? activeModel.decision_threshold) || 0) * 100).toFixed(2)}%
+                </strong>
               </div>
             </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              {activeModel.calibration_method &&
+              activeModel.calibration_method !== "NONE_UNCALIBRATED" &&
+              typeof activeModel.ece_score === "number" ? (
+                <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-bold text-emerald-900">
+                  Terkalibrasi Empiris (ECE = {activeModel.ece_score.toFixed(4)}) • {activeModel.calibration_method}
+                </span>
+              ) : (
+                <span className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 font-bold text-amber-900">
+                  Riset Belum Terkalibrasi
+                </span>
+              )}
+              <span
+                title="Monotonic LightGBM constraints: Lactate ↑, Shock Index ↑, MAP ↓ strictly constrained against clinical polarity inversion."
+                className={`rounded border px-2 py-0.5 font-bold ${
+                  activeModel.monotone_constraints_active
+                    ? "border-teal-300 bg-teal-50 text-teal-900"
+                    : "border-slate-300 bg-slate-100 text-slate-700"
+                }`}
+              >
+                {activeModel.monotone_constraints_active
+                  ? "Monotonic Clinical Guard: ACTIVE"
+                  : "Monotonic Clinical Guard: INACTIVE"}
+              </span>
+            </div>
+
+            <ReliabilityCurveMini
+              bins={parseIcuReliabilityBins(
+                activeModel.reliability_bins,
+                activeModel.reliability_bins_json
+              )}
+              calibrationMethod={activeModel.calibration_method || "NONE_UNCALIBRATED"}
+              eceScore={
+                typeof activeModel.ece_score === "number"
+                  ? activeModel.ece_score
+                  : null
+              }
+            />
 
             <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider pt-2">
               Measured Metrics on Held-Out Test Set:
@@ -939,15 +1200,32 @@ export default function IcuEarlyWarningWorkspace({
             </div>
 
             <div className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded border border-slate-200 leading-relaxed">
-              {(activeModel.model_id || "").includes("cohort") ? (
-                <>
-                  <strong>Dataset Provenance (Archive2 Cohort):</strong> Trained and evaluated on the 5,000-patient synthetic ICU clinical cohort (83 baseline vital, laboratory, and comorbidity predictors; post-event interventions, post-stay outcomes, and synthetic target proxies strictly excluded). Secondary CHF endpoint AUROC = 0.7176.
-                </>
-              ) : (
-                <>
-                  <strong>Dataset Provenance (PhysioNet 2019):</strong> Trained and tested on 118 real ICU stays (4,615 observation hours) from the Computing in Cardiology Challenge 2019 (CC BY 4.0). Split grouped strictly by unique patient ID (70% Train, 15% Val, 15% Test) with verified zero patient overlap.
-                </>
-              )}
+              {(() => {
+                let parsedMeta: Record<string, unknown> = {};
+                try {
+                  parsedMeta = JSON.parse(activeModel.metrics_json || "{}");
+                } catch {
+                  parsedMeta = {};
+                }
+                const cohortSummary = parsedMeta.cohort_summary as Record<string, unknown> | undefined;
+                if ((activeModel.model_id || "").includes("cohort")) {
+                  return (
+                    <>
+                      <strong>Dataset Provenance (Archive2 Cohort):</strong> Trained and evaluated on the 5,000-patient synthetic ICU clinical cohort (83 baseline vital, laboratory, and comorbidity predictors; post-event interventions, post-stay outcomes, and synthetic target proxies strictly excluded). Secondary CHF endpoint AUROC = 0.7176.
+                    </>
+                  );
+                }
+                const staysCount = cohortSummary?.eligible_stays ?? cohortSummary?.total_stays;
+                const rowsCount = cohortSummary?.total_rows;
+                return (
+                  <>
+                    <strong>Dataset Provenance (PhysioNet 2019):</strong> Trained and tested on{" "}
+                    {typeof staysCount === "number" ? staysCount : "real"} ICU stays
+                    {typeof rowsCount === "number" ? ` (${rowsCount.toLocaleString()} observation hours)` : ""}{" "}
+                    from the Computing in Cardiology Challenge 2019 (CC BY 4.0). Split grouped strictly by unique patient ID (70% Train, 15% Val, 15% Test) with verified zero patient overlap.
+                  </>
+                );
+              })()}
             </div>
 
             <div className="flex justify-end pt-2">

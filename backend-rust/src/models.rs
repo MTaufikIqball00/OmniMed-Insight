@@ -176,6 +176,53 @@ pub struct MedicalImageRow {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReliabilityBin {
+    pub bin_lower: f64,
+    pub bin_upper: f64,
+    pub avg_confidence: f64,
+    pub empirical_accuracy: f64,
+    pub count: i64,
+    pub gap: f64,
+}
+
+fn default_calibration_method() -> String {
+    "NONE_UNCALIBRATED".to_string()
+}
+
+fn default_checkpoint_data_provenance() -> String {
+    "UNINITIALIZED_RESEARCH_BACKBONE".to_string()
+}
+
+fn deserialize_calibration_method<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_else(default_calibration_method))
+}
+
+fn deserialize_provenance<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?
+        .unwrap_or_else(default_checkpoint_data_provenance))
+}
+
+fn deserialize_bins<'de, D>(deserializer: D) -> Result<Vec<ReliabilityBin>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<Vec<ReliabilityBin>>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+fn deserialize_bool_or_false<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or(false))
+}
+
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct AnalysisJobRow {
     pub id: String,
@@ -187,6 +234,13 @@ pub struct AnalysisJobRow {
     pub xai_method: String,
     pub status: String,
     pub calibration_status: String,
+    pub calibration_method: String,
+    pub ece_score: Option<f64>,
+    pub brier_score: Option<f64>,
+    pub nll_score: Option<f64>,
+    pub checkpoint_sha256: Option<String>,
+    pub checkpoint_data_provenance: String,
+    pub reliability_bins_json: String,
     pub execution_device: String,
     pub predicted_class_code: Option<String>,
     pub predicted_class_label: Option<String>,
@@ -351,6 +405,26 @@ pub struct InternalAiResponse {
     pub model_version: String,
     pub model_architecture: String,
     pub calibration_status: String,
+    #[serde(
+        default = "default_calibration_method",
+        deserialize_with = "deserialize_calibration_method"
+    )]
+    pub calibration_method: String,
+    #[serde(default)]
+    pub ece_score: Option<f64>,
+    #[serde(default)]
+    pub brier_score: Option<f64>,
+    #[serde(default)]
+    pub nll_score: Option<f64>,
+    #[serde(default)]
+    pub checkpoint_sha256: Option<String>,
+    #[serde(
+        default = "default_checkpoint_data_provenance",
+        deserialize_with = "deserialize_provenance"
+    )]
+    pub checkpoint_data_provenance: String,
+    #[serde(default, deserialize_with = "deserialize_bins")]
+    pub reliability_bins: Vec<ReliabilityBin>,
     pub execution_device: String,
     pub inference_duration_ms: f64,
     pub modality: String,
@@ -411,6 +485,11 @@ pub struct IcuPredictionRow {
     pub model_version: String,
     pub data_quality_status: String,
     pub stale_warning: Option<String>,
+    pub calibration_method: String,
+    pub ece_score: Option<f64>,
+    pub calibrated_threshold: Option<f64>,
+    pub monotone_constraints_active: bool,
+    pub reliability_bins_json: String,
     pub shap_attributions_json: String,
     pub vital_summary_json: String,
     pub created_at: String,
@@ -451,6 +530,11 @@ pub struct IcuModelRow {
     pub f1_score: f64,
     pub metrics_json: String,
     pub top_features_json: String,
+    pub calibration_method: String,
+    pub ece_score: Option<f64>,
+    pub calibrated_threshold: Option<f64>,
+    pub monotone_constraints_active: bool,
+    pub reliability_bins_json: String,
     pub is_active: i64,
     pub created_at: String,
 }
@@ -508,6 +592,19 @@ pub struct InternalIcuPredictResponse {
     pub decision_threshold: f64,
     pub data_quality_status: String,
     pub stale_observations_warning: Option<String>,
+    #[serde(
+        default = "default_calibration_method",
+        deserialize_with = "deserialize_calibration_method"
+    )]
+    pub calibration_method: String,
+    #[serde(default)]
+    pub ece_score: Option<f64>,
+    #[serde(default)]
+    pub calibrated_threshold: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_bool_or_false")]
+    pub monotone_constraints_active: bool,
+    #[serde(default, deserialize_with = "deserialize_bins")]
+    pub reliability_bins: Vec<ReliabilityBin>,
     pub top_shap_attributions: Vec<InternalShapItem>,
     pub vital_signs_summary: serde_json::Value,
     pub clinical_disclaimer: String,

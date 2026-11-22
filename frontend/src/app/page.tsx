@@ -959,6 +959,39 @@ export default function OmniMedApp() {
     }
   }, [selectedReport]);
 
+  const imagingCalibration = useMemo(() => {
+    const details = systemStatus?.python_ai_service?.details as
+      | Record<string, unknown>
+      | undefined;
+    const status =
+      selectedJob?.calibration_status ||
+      (typeof details?.calibration_status === "string"
+        ? details.calibration_status
+        : "RESEARCH_UNVERIFIED");
+    const method =
+      selectedJob?.calibration_method ||
+      (typeof details?.calibration_method === "string"
+        ? details.calibration_method
+        : "NONE_UNCALIBRATED");
+    const ece =
+      typeof selectedJob?.ece_score === "number"
+        ? selectedJob.ece_score
+        : typeof details?.ece_score === "number"
+        ? details.ece_score
+        : null;
+    const sha =
+      selectedJob?.checkpoint_sha256 ??
+      (typeof details?.checkpoint_sha256 === "string"
+        ? details.checkpoint_sha256
+        : null);
+    const provenance =
+      selectedJob?.checkpoint_data_provenance ||
+      (typeof details?.checkpoint_data_provenance === "string"
+        ? details.checkpoint_data_provenance
+        : "UNINITIALIZED_RESEARCH_BACKBONE");
+    return { status, method, ece, sha, provenance };
+  }, [selectedJob, systemStatus]);
+
   if (authChecking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-900 text-slate-100">
@@ -2131,7 +2164,7 @@ export default function OmniMedApp() {
                 <div className="space-y-6 lg:col-span-5">
                   {/* Run Configured Model Card */}
                   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <h2 className="text-sm font-bold text-slate-900">
                           Configured Medical Imaging &amp; XAI Engine
@@ -2140,9 +2173,46 @@ export default function OmniMedApp() {
                           PyTorch DenseNet-121 • Internal Service (:8200)
                         </p>
                       </div>
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-300">
-                        RESEARCH_UNVERIFIED
-                      </span>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {imagingCalibration.status === "CALIBRATED_CHECKPOINT" &&
+                        imagingCalibration.ece !== null ? (
+                          <span className="rounded border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
+                            Terkalibrasi Empiris (ECE ={" "}
+                            {imagingCalibration.ece.toFixed(4)})
+                          </span>
+                        ) : imagingCalibration.status === "CUSTOM_CHECKPOINT" ? (
+                          <span className="rounded border border-sky-300 bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-900">
+                            Checkpoint Kustom (Belum Terkalibrasi)
+                          </span>
+                        ) : (
+                          <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-300">
+                            Riset Belum Terkalibrasi (RESEARCH_UNVERIFIED)
+                          </span>
+                        )}
+                        {imagingCalibration.method !== "NONE_UNCALIBRATED" && (
+                          <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-700">
+                            {imagingCalibration.method}
+                          </span>
+                        )}
+                        {imagingCalibration.sha && (
+                          <span
+                            className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-700"
+                            title={`SHA-256: ${imagingCalibration.sha}`}
+                          >
+                            SHA-256: {imagingCalibration.sha.slice(0, 12)}…
+                          </span>
+                        )}
+                        <span
+                          className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                            imagingCalibration.provenance ===
+                            "EXTERNAL_CLINICAL_COHORT"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : "border-amber-200 bg-amber-50 text-amber-900"
+                          }`}
+                        >
+                          {imagingCalibration.provenance}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -2552,7 +2622,7 @@ export default function OmniMedApp() {
                         "2. Configured Model Prediction Output & Uncertainty",
                       val: editModelFindings,
                       setter: setEditModelFindings,
-                      badge: "MODEL PREDICTION (RESEARCH_UNVERIFIED)",
+                      badge: `MODEL PREDICTION (${selectedJob?.calibration_status || "RESEARCH_UNVERIFIED"})`,
                       rows: 6,
                     },
                     {

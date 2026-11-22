@@ -55,6 +55,7 @@ htmlcov/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/icu_raw/*.psv
 data/storage/uploads/*
 data/storage/overlays/*
 !data/storage/uploads/.gitkeep

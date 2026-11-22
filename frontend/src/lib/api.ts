@@ -125,6 +125,15 @@ export interface XaiMetadata {
   localization_limitation: string;
 }
 
+export interface ReliabilityBin {
+  bin_lower: number;
+  bin_upper: number;
+  avg_confidence: number;
+  empirical_accuracy: number;
+  count: number;
+  gap: number;
+}
+
 export interface AnalysisJobRecord {
   id: string;
   case_id: string;
@@ -135,6 +144,14 @@ export interface AnalysisJobRecord {
   xai_method: string;
   status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
   calibration_status: string;
+  calibration_method?: string;
+  ece_score?: number | null;
+  brier_score?: number | null;
+  nll_score?: number | null;
+  checkpoint_sha256?: string | null;
+  checkpoint_data_provenance?: string;
+  reliability_bins_json?: string;
+  reliability_bins?: ReliabilityBin[];
   execution_device: string;
   predicted_class_code: string | null;
   predicted_class_label: string | null;
@@ -361,6 +378,12 @@ export interface IcuPredictionRecord {
   model_version: string;
   data_quality_status: "ADEQUATE" | "SPARSE_DATA" | "STALE_OBSERVATIONS" | "INSUFFICIENT_DATA";
   stale_warning?: string | null;
+  calibration_method?: string;
+  ece_score?: number | null;
+  calibrated_threshold?: number | null;
+  monotone_constraints_active?: boolean;
+  reliability_bins_json?: string;
+  reliability_bins?: ReliabilityBin[];
   shap_attributions_json: string;
   vital_summary_json: string;
   created_at: string;
@@ -403,6 +426,12 @@ export interface IcuModelRecord {
   f1_score: number;
   metrics_json: string;
   top_features_json: string;
+  calibration_method?: string;
+  ece_score?: number | null;
+  calibrated_threshold?: number | null;
+  monotone_constraints_active?: boolean;
+  reliability_bins_json?: string;
+  reliability_bins?: ReliabilityBin[];
   is_active: number;
   created_at: string;
 }

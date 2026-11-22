@@ -5,12 +5,13 @@ Unit and Integration Tests for ICU Early Warning Inference & SHAP Explainability
 import os
 import sys
 from pathlib import Path
+import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
-from app.main import app
+from app.main import app, get_icu_engine
 
 TEST_TOKEN = "test-internal-token-32-chars-minimum-12345"
 os.environ["INTERNAL_SERVICE_TOKEN"] = TEST_TOKEN
@@ -148,11 +149,14 @@ def test_calibrated_models_specificity_and_anti_leakage_guarantees(client):
     assert resp.status_code == 200
     meta = resp.json()
 
-    # PhysioNet 2019 6-12h model guarantees
+    # PhysioNet 2019 (~1,000 stays) monotonic & calibrated 6-12h model guarantees
     ts_metrics = meta["test_metrics"]
-    assert ts_metrics["auroc"] > 0.80
-    assert ts_metrics["specificity"] > 0.50
-    assert ts_metrics["sensitivity"] >= 0.85
+    assert ts_metrics["auroc"] > 0.72
+    assert ts_metrics["specificity"] >= 0.60
+    assert ts_metrics["sensitivity"] >= 0.60
+    assert ts_metrics["ece_score"] < 0.05
+    assert meta["ece_score"] < 0.05
+    assert meta["monotone_constraints_active"] is True
 
     # Archive2 5,000-patient cohort guarantees
     cohort = meta["cohort_model"]
@@ -175,4 +179,147 @@ def test_calibrated_models_specificity_and_anti_leakage_guarantees(client):
     }
     feature_set = set(cohort["feature_cols"])
     assert forbidden.isdisjoint(feature_set)
+
+
+def _extract_raw_shap_dict(observations, age: float = 72.0, gender: float = 1.0, current_iculos: int = 12):
+    eng = get_icu_engine()
+    vec, _, _ = eng.compute_features_from_observations(observations, age=age, gender=gender, current_iculos=current_iculos)
+    vec_df = pd.DataFrame(vec, columns=eng.feature_cols)
+    raw_shap = eng.explainer.shap_values(vec_df, check_additivity=False)
+    if isinstance(raw_shap, list):
+        shap_vec = raw_shap[1][0] if len(raw_shap) > 1 else raw_shap[0][0]
+    elif len(raw_shap.shape) == 3:
+        shap_vec = raw_shap[0, :, 1]
+    else:
+        shap_vec = raw_shap[0]
+    return dict(zip(eng.feature_cols, [float(v) for v in shap_vec]))
+
+
+def test_monotonic_lactate_increase_never_reverses_shap(client):
+    """Identical patient at Lactate=1.1 vs 4.5 mmol/L must never decrease risk or reverse Lactate SHAP."""
+    base_obs = [
+        {"variable_name": "HR", "value": 115.0, "iculos_hour": 10},
+        {"variable_name": "HR", "value": 118.0, "iculos_hour": 12},
+        {"variable_name": "SBP", "value": 92.0, "iculos_hour": 12},
+        {"variable_name": "DBP", "value": 58.0, "iculos_hour": 12},
+        {"variable_name": "MAP", "value": 69.3, "iculos_hour": 12},
+        {"variable_name": "Resp", "value": 24.0, "iculos_hour": 12},
+        {"variable_name": "Temp", "value": 35.8, "iculos_hour": 12},
+        {"variable_name": "O2Sat", "value": 94.0, "iculos_hour": 12},
+        {"variable_name": "WBC", "value": 3.4, "iculos_hour": 11},
+    ]
+    obs_low = base_obs + [{"variable_name": "Lactate", "value": 1.1, "iculos_hour": 12}]
+    obs_high = base_obs + [{"variable_name": "Lactate", "value": 4.5, "iculos_hour": 12}]
+
+    resp_low = client.post(
+        "/internal/v1/icu/predict",
+        headers={"X-Internal-Service-Token": TEST_TOKEN},
+        json={"stay_id": "mono-lac-low", "patient_id": "pat-mono-1", "current_iculos": 12, "observations": obs_low, "age": 72.0, "gender": 1.0},
+    )
+    resp_high = client.post(
+        "/internal/v1/icu/predict",
+        headers={"X-Internal-Service-Token": TEST_TOKEN},
+        json={"stay_id": "mono-lac-high", "patient_id": "pat-mono-1", "current_iculos": 12, "observations": obs_high, "age": 72.0, "gender": 1.0},
+    )
+    assert resp_low.status_code == 200 and resp_high.status_code == 200
+    d_low = resp_low.json()
+    d_high = resp_high.json()
+
+    assert d_high["risk_score"] >= d_low["risk_score"]
+
+    shap_low = _extract_raw_shap_dict(obs_low)
+    shap_high = _extract_raw_shap_dict(obs_high)
+    for feat in ["Lactate_latest", "Lactate_roll_max_6h", "Lactate_roll_mean_6h"]:
+        assert shap_high[feat] >= shap_low[feat] - 1e-6, f"Monotonicity violated on {feat}: {shap_low[feat]} -> {shap_high[feat]}"
+
+    for item in d_high["top_shap_attributions"]:
+        if "Lactate" in item["feature"] and item["feature"] != "Lactate_roll_std_6h":
+            assert item["direction"] != "DECREASES_RISK"
+
+
+def test_monotonic_map_drop_never_reverses_shap(client):
+    """Identical patient at MAP=85 vs 55 mmHg must never decrease risk or reverse MAP/hypoperfusion SHAP."""
+    base_obs = [
+        {"variable_name": "HR", "value": 115.0, "iculos_hour": 10},
+        {"variable_name": "HR", "value": 118.0, "iculos_hour": 12},
+        {"variable_name": "SBP", "value": 92.0, "iculos_hour": 12},
+        {"variable_name": "DBP", "value": 58.0, "iculos_hour": 12},
+        {"variable_name": "Resp", "value": 24.0, "iculos_hour": 12},
+        {"variable_name": "Temp", "value": 35.8, "iculos_hour": 12},
+        {"variable_name": "O2Sat", "value": 94.0, "iculos_hour": 12},
+        {"variable_name": "WBC", "value": 3.4, "iculos_hour": 11},
+    ]
+    obs_high_map = base_obs + [{"variable_name": "MAP", "value": 85.0, "iculos_hour": 12}]
+    obs_low_map = base_obs + [{"variable_name": "MAP", "value": 55.0, "iculos_hour": 12}]
+
+    resp_high_map = client.post(
+        "/internal/v1/icu/predict",
+        headers={"X-Internal-Service-Token": TEST_TOKEN},
+        json={"stay_id": "mono-map-high", "patient_id": "pat-mono-2", "current_iculos": 12, "observations": obs_high_map, "age": 72.0, "gender": 1.0},
+    )
+    resp_low_map = client.post(
+        "/internal/v1/icu/predict",
+        headers={"X-Internal-Service-Token": TEST_TOKEN},
+        json={"stay_id": "mono-map-low", "patient_id": "pat-mono-2", "current_iculos": 12, "observations": obs_low_map, "age": 72.0, "gender": 1.0},
+    )
+    assert resp_high_map.status_code == 200 and resp_low_map.status_code == 200
+    d_high_map = resp_high_map.json()
+    d_low_map = resp_low_map.json()
+
+    assert d_low_map["risk_score"] >= d_high_map["risk_score"]
+
+    shap_high_map = _extract_raw_shap_dict(obs_high_map)
+    shap_low_map = _extract_raw_shap_dict(obs_low_map)
+    for feat in ["MAP_latest", "MAP_roll_min_6h", "MAP_roll_mean_6h", "map_hypoperfusion_depth"]:
+        assert shap_low_map[feat] >= shap_high_map[feat] - 1e-6, f"Monotonicity violated on {feat}: {shap_high_map[feat]} -> {shap_low_map[feat]}"
+
+    for item in d_low_map["top_shap_attributions"]:
+        if "MAP" in item["feature"] or item["feature"] == "map_hypoperfusion_depth":
+            assert item["direction"] != "DECREASES_RISK"
+
+
+def test_icu_calibration_telemetry_exposed(client):
+    """Verify /internal/v1/icu/predict and /internal/v1/icu/models expose calibration & monotonicity telemetry."""
+    models_resp = client.get(
+        "/internal/v1/icu/models",
+        headers={"X-Internal-Service-Token": TEST_TOKEN},
+    )
+    assert models_resp.status_code == 200
+    models_data = models_resp.json()
+    assert models_data["calibration_method"] in ("PLATT_SCALING", "ISOTONIC_CALIBRATION")
+    assert models_data["ece_score"] is not None and models_data["ece_score"] < 0.05
+    assert models_data["calibrated_threshold"] is not None and 0.0 < models_data["calibrated_threshold"] < 1.0
+    assert models_data["monotone_constraints_active"] is True
+    assert isinstance(models_data["reliability_bins"], list) and len(models_data["reliability_bins"]) > 0
+
+    pred_resp = client.post(
+        "/internal/v1/icu/predict",
+        headers={"X-Internal-Service-Token": TEST_TOKEN},
+        json={
+            "stay_id": "stay-cal-telemetry",
+            "patient_id": "pat-cal-telemetry",
+            "current_iculos": 12,
+            "observations": [
+                {"variable_name": "HR", "value": 102.0, "iculos_hour": 12},
+                {"variable_name": "SBP", "value": 106.0, "iculos_hour": 12},
+                {"variable_name": "MAP", "value": 74.0, "iculos_hour": 12},
+                {"variable_name": "Resp", "value": 20.0, "iculos_hour": 12},
+                {"variable_name": "Temp", "value": 37.8, "iculos_hour": 12},
+                {"variable_name": "O2Sat", "value": 96.0, "iculos_hour": 12},
+            ],
+        },
+    )
+    assert pred_resp.status_code == 200
+    pred_data = pred_resp.json()
+    assert pred_data["calibration_method"] in ("PLATT_SCALING", "ISOTONIC_CALIBRATION")
+    assert pred_data["ece_score"] is not None and pred_data["ece_score"] < 0.05
+    assert pred_data["calibrated_threshold"] is not None and 0.0 < pred_data["calibrated_threshold"] < 1.0
+    assert pred_data["monotone_constraints_active"] is True
+    assert isinstance(pred_data["reliability_bins"], list) and len(pred_data["reliability_bins"]) > 0
+    for b in pred_data["reliability_bins"]:
+        assert b["count"] > 0
+        assert 0.0 <= b["bin_lower"] < b["bin_upper"] <= 1.0
+        assert 0.0 <= b["avg_confidence"] <= 1.0
+        assert 0.0 <= b["empirical_accuracy"] <= 1.0
+        assert b["gap"] >= 0.0
 

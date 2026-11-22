@@ -1,69 +1,111 @@
 {
   "qsofa_clinical_baseline": {
-    "auroc": 0.5548,
-    "auprc": 0.0195,
-    "brier_score": 0.1413,
+    "auroc": 0.5469,
+    "auprc": 0.0125,
+    "brier_score": 0.1098,
+    "ece_score": 0.1765,
     "threshold_used": 0.5,
-    "sensitivity": 0.5385,
-    "specificity": 0.5943,
-    "precision": 0.0219,
-    "f1_score": 0.0422,
+    "sensitivity": 0.4127,
+    "specificity": 0.6845,
+    "precision": 0.0146,
+    "f1_score": 0.0282,
     "confusion_matrix": {
-      "true_negatives": 457,
-      "false_positives": 312,
-      "false_negatives": 6,
-      "true_positives": 7
+      "true_negatives": 3807,
+      "false_positives": 1755,
+      "false_negatives": 37,
+      "true_positives": 26
     },
     "model_name": "Clinical qSOFA Baseline (SBP <= 100, RR >= 22)"
   },
   "logistic_regression": {
-    "auroc": 0.8308,
-    "auprc": 0.1321,
-    "brier_score": 0.048,
-    "threshold_used": 0.85,
-    "sensitivity": 0.0769,
-    "specificity": 0.9909,
-    "precision": 0.125,
-    "f1_score": 0.0952,
+    "auroc": 0.7237,
+    "auprc": 0.0297,
+    "brier_score": 0.1622,
+    "ece_score": 0.2961,
+    "threshold_used": 0.47,
+    "sensitivity": 0.5397,
+    "specificity": 0.7492,
+    "precision": 0.0238,
+    "f1_score": 0.0456,
     "confusion_matrix": {
-      "true_negatives": 762,
-      "false_positives": 7,
-      "false_negatives": 12,
-      "true_positives": 1
+      "true_negatives": 4167,
+      "false_positives": 1395,
+      "false_negatives": 29,
+      "true_positives": 34
     },
     "model_name": "L2-Regularized Logistic Regression (Balanced)"
   },
-  "lightgbm": {
-    "auroc": 0.8663,
-    "auprc": 0.066,
-    "brier_score": 0.0232,
-    "threshold_used": 0.0326,
-    "sensitivity": 1.0,
-    "specificity": 0.5644,
-    "precision": 0.0374,
-    "f1_score": 0.072,
+  "lightgbm_unconstrained": {
+    "auroc": 0.7699,
+    "auprc": 0.0458,
+    "brier_score": 0.0109,
+    "ece_score": 0.0037,
+    "threshold_used": 0.0057,
+    "sensitivity": 0.7143,
+    "specificity": 0.6507,
+    "precision": 0.0226,
+    "f1_score": 0.0439,
     "confusion_matrix": {
-      "true_negatives": 434,
-      "false_positives": 335,
-      "false_negatives": 0,
-      "true_positives": 13
+      "true_negatives": 3619,
+      "false_positives": 1943,
+      "false_negatives": 18,
+      "true_positives": 45
     },
-    "model_name": "LightGBM Gradient Boosted Decision Trees"
+    "model_name": "LightGBM Unconstrained Baseline"
+  },
+  "lightgbm_monotonic_uncalibrated": {
+    "auroc": 0.7822,
+    "auprc": 0.0688,
+    "brier_score": 0.0108,
+    "nll_score": 0.0556,
+    "ece_score": 0.0039,
+    "threshold_used": 0.0073,
+    "sensitivity": 0.6667,
+    "specificity": 0.731,
+    "precision": 0.0273,
+    "f1_score": 0.0525,
+    "confusion_matrix": {
+      "true_negatives": 4066,
+      "false_positives": 1496,
+      "false_negatives": 21,
+      "true_positives": 42
+    },
+    "model_name": "LightGBM Monotonic (Uncalibrated)"
+  },
+  "lightgbm": {
+    "auroc": 0.7817,
+    "auprc": 0.0486,
+    "brier_score": 0.0108,
+    "nll_score": 0.0662,
+    "ece_score": 0.0005,
+    "threshold_used": 0.02,
+    "sensitivity": 0.6508,
+    "specificity": 0.7504,
+    "precision": 0.0287,
+    "f1_score": 0.055,
+    "confusion_matrix": {
+      "true_negatives": 4174,
+      "false_positives": 1388,
+      "false_negatives": 22,
+      "true_positives": 41
+    },
+    "model_name": "LightGBM Monotonic + ISOTONIC_CALIBRATION"
   },
   "xgboost": {
-    "auroc": 0.9034,
-    "auprc": 0.1076,
-    "brier_score": 0.0215,
-    "threshold_used": 0.08,
-    "sensitivity": 0.9231,
-    "specificity": 0.7139,
-    "precision": 0.0517,
-    "f1_score": 0.098,
+    "auroc": 0.7376,
+    "auprc": 0.0309,
+    "brier_score": 0.0235,
+    "ece_score": 0.1116,
+    "threshold_used": 0.1233,
+    "sensitivity": 0.5079,
+    "specificity": 0.7524,
+    "precision": 0.0227,
+    "f1_score": 0.0435,
     "confusion_matrix": {
-      "true_negatives": 549,
-      "false_positives": 220,
-      "false_negatives": 1,
-      "true_positives": 12
+      "true_negatives": 4185,
+      "false_positives": 1377,
+      "false_negatives": 31,
+      "true_positives": 32
     },
     "model_name": "XGBoost Classifier"
   }

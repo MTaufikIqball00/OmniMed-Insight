@@ -69,6 +69,15 @@ class XaiArtifactReport(BaseModel):
     localization_limitation: str
 
 
+class ReliabilityBin(BaseModel):
+    bin_lower: float
+    bin_upper: float
+    avg_confidence: float
+    empirical_accuracy: float
+    count: int
+    gap: float
+
+
 class AnalyzeImageResponse(BaseModel):
     job_id: str
     image_id: str
@@ -76,7 +85,14 @@ class AnalyzeImageResponse(BaseModel):
     model_id: str
     model_version: str
     model_architecture: str
-    calibration_status: Literal["RESEARCH_UNVERIFIED", "CUSTOM_CHECKPOINT"]
+    calibration_status: Literal["RESEARCH_UNVERIFIED", "CUSTOM_CHECKPOINT", "CALIBRATED_CHECKPOINT"]
+    calibration_method: str = "NONE_UNCALIBRATED"
+    ece_score: Optional[float] = None
+    brier_score: Optional[float] = None
+    nll_score: Optional[float] = None
+    checkpoint_sha256: Optional[str] = None
+    checkpoint_data_provenance: str = "UNINITIALIZED_RESEARCH_BACKBONE"
+    reliability_bins: List[ReliabilityBin] = Field(default_factory=list)
     execution_device: str
     inference_duration_ms: float
     modality: str
@@ -136,6 +152,11 @@ class IcuPredictResponse(BaseModel):
     model_id: str
     model_version: str
     decision_threshold: float
+    calibration_method: str = "NONE_UNCALIBRATED"
+    ece_score: Optional[float] = None
+    calibrated_threshold: Optional[float] = None
+    monotone_constraints_active: bool = False
+    reliability_bins: List[ReliabilityBin] = Field(default_factory=list)
     data_quality_status: Literal["ADEQUATE", "SPARSE_DATA", "STALE_OBSERVATIONS", "INSUFFICIENT_DATA"]
     stale_observations_warning: Optional[str] = None
     top_shap_attributions: List[ShapAttributionItem]

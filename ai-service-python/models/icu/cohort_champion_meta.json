@@ -3,27 +3,506 @@
   "dataset_source": "Archive2 Sepsis ICU Synthetic Cohort (5,000 patients, Anti-Leakage Filtered)",
   "algorithm": "lightgbm",
   "target_endpoint": "sepsis_label",
+  "decision_threshold": 0.67,
+  "calibrated_threshold": 0.67,
+  "calibration_method": "PLATT_SCALING",
+  "ece_score": 0.0104,
+  "monotone_constraints_active": false,
+  "reliability_bins": [
+    {
+      "bin_lower": 0.0,
+      "bin_upper": 0.1,
+      "avg_confidence": 0.0024,
+      "empirical_accuracy": 0.0063,
+      "count": 637,
+      "gap": 0.0039
+    },
+    {
+      "bin_lower": 0.1,
+      "bin_upper": 0.2,
+      "avg_confidence": 0.1441,
+      "empirical_accuracy": 0.5,
+      "count": 4,
+      "gap": 0.3559
+    },
+    {
+      "bin_lower": 0.3,
+      "bin_upper": 0.4,
+      "avg_confidence": 0.398,
+      "empirical_accuracy": 1.0,
+      "count": 1,
+      "gap": 0.602
+    },
+    {
+      "bin_lower": 0.4,
+      "bin_upper": 0.5,
+      "avg_confidence": 0.4504,
+      "empirical_accuracy": 1.0,
+      "count": 2,
+      "gap": 0.5496
+    },
+    {
+      "bin_lower": 0.7,
+      "bin_upper": 0.8,
+      "avg_confidence": 0.7263,
+      "empirical_accuracy": 0.0,
+      "count": 1,
+      "gap": 0.7263
+    },
+    {
+      "bin_lower": 0.8,
+      "bin_upper": 0.9,
+      "avg_confidence": 0.8026,
+      "empirical_accuracy": 0.0,
+      "count": 1,
+      "gap": 0.8026
+    },
+    {
+      "bin_lower": 0.9,
+      "bin_upper": 1.0,
+      "avg_confidence": 0.9838,
+      "empirical_accuracy": 0.9904,
+      "count": 104,
+      "gap": 0.0065
+    }
+  ],
+  "calibration_comparison": {
+    "val": {
+      "NONE_UNCALIBRATED": {
+        "auroc": 0.9997,
+        "auprc": 0.9984,
+        "brier_score": 0.0056,
+        "nll_score": 0.0363,
+        "ece_score": 0.0253,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0148,
+            "empirical_accuracy": 0.0,
+            "count": 606,
+            "gap": 0.0148
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1389,
+            "empirical_accuracy": 0.0,
+            "count": 18,
+            "gap": 0.1389
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.3,
+            "avg_confidence": 0.2454,
+            "empirical_accuracy": 0.1429,
+            "count": 7,
+            "gap": 0.1025
+          },
+          {
+            "bin_lower": 0.3,
+            "bin_upper": 0.4,
+            "avg_confidence": 0.344,
+            "empirical_accuracy": 0.0,
+            "count": 4,
+            "gap": 0.344
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "avg_confidence": 0.4839,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.4839
+          },
+          {
+            "bin_lower": 0.6,
+            "bin_upper": 0.7,
+            "avg_confidence": 0.6506,
+            "empirical_accuracy": 0.6667,
+            "count": 3,
+            "gap": 0.0161
+          },
+          {
+            "bin_lower": 0.7,
+            "bin_upper": 0.8,
+            "avg_confidence": 0.7697,
+            "empirical_accuracy": 1.0,
+            "count": 5,
+            "gap": 0.2303
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "avg_confidence": 0.8686,
+            "empirical_accuracy": 0.8889,
+            "count": 9,
+            "gap": 0.0203
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "avg_confidence": 0.963,
+            "empirical_accuracy": 1.0,
+            "count": 97,
+            "gap": 0.037
+          }
+        ]
+      },
+      "PLATT_SCALING": {
+        "auroc": 0.9991,
+        "auprc": 0.9935,
+        "brier_score": 0.0039,
+        "nll_score": 0.0194,
+        "ece_score": 0.0045,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0031,
+            "empirical_accuracy": 0.0016,
+            "count": 635,
+            "gap": 0.0015
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.3,
+            "avg_confidence": 0.2677,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.2677
+          },
+          {
+            "bin_lower": 0.6,
+            "bin_upper": 0.7,
+            "avg_confidence": 0.6702,
+            "empirical_accuracy": 1.0,
+            "count": 1,
+            "gap": 0.3298
+          },
+          {
+            "bin_lower": 0.7,
+            "bin_upper": 0.8,
+            "avg_confidence": 0.7503,
+            "empirical_accuracy": 0.5,
+            "count": 2,
+            "gap": 0.2503
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "avg_confidence": 0.8535,
+            "empirical_accuracy": 1.0,
+            "count": 2,
+            "gap": 0.1465
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "avg_confidence": 0.9816,
+            "empirical_accuracy": 0.9908,
+            "count": 109,
+            "gap": 0.0093
+          }
+        ]
+      },
+      "ISOTONIC_CALIBRATION": {
+        "auroc": 0.9945,
+        "auprc": 0.982,
+        "brier_score": 0.0047,
+        "nll_score": 0.0818,
+        "ece_score": 0.0045,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0002,
+            "empirical_accuracy": 0.0016,
+            "count": 632,
+            "gap": 0.0014
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1667,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.1667
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.3,
+            "avg_confidence": 0.2,
+            "empirical_accuracy": 0.0,
+            "count": 3,
+            "gap": 0.2
+          },
+          {
+            "bin_lower": 0.3,
+            "bin_upper": 0.4,
+            "avg_confidence": 0.3641,
+            "empirical_accuracy": 1.0,
+            "count": 1,
+            "gap": 0.6359
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "avg_confidence": 0.9922,
+            "empirical_accuracy": 0.9823,
+            "count": 113,
+            "gap": 0.0099
+          }
+        ]
+      }
+    },
+    "test": {
+      "NONE_UNCALIBRATED": {
+        "auroc": 0.9954,
+        "auprc": 0.9864,
+        "brier_score": 0.0111,
+        "nll_score": 0.0528,
+        "ece_score": 0.0225,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0148,
+            "empirical_accuracy": 0.0033,
+            "count": 608,
+            "gap": 0.0115
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.138,
+            "empirical_accuracy": 0.0952,
+            "count": 21,
+            "gap": 0.0428
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.3,
+            "avg_confidence": 0.2487,
+            "empirical_accuracy": 0.0,
+            "count": 7,
+            "gap": 0.2487
+          },
+          {
+            "bin_lower": 0.3,
+            "bin_upper": 0.4,
+            "avg_confidence": 0.3305,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.3305
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "avg_confidence": 0.4161,
+            "empirical_accuracy": 0.5,
+            "count": 4,
+            "gap": 0.0839
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6,
+            "avg_confidence": 0.5507,
+            "empirical_accuracy": 1.0,
+            "count": 3,
+            "gap": 0.4493
+          },
+          {
+            "bin_lower": 0.6,
+            "bin_upper": 0.7,
+            "avg_confidence": 0.6804,
+            "empirical_accuracy": 0.0,
+            "count": 2,
+            "gap": 0.6804
+          },
+          {
+            "bin_lower": 0.7,
+            "bin_upper": 0.8,
+            "avg_confidence": 0.7941,
+            "empirical_accuracy": 1.0,
+            "count": 3,
+            "gap": 0.2059
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "avg_confidence": 0.8607,
+            "empirical_accuracy": 1.0,
+            "count": 7,
+            "gap": 0.1393
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "avg_confidence": 0.9654,
+            "empirical_accuracy": 0.9894,
+            "count": 94,
+            "gap": 0.024
+          }
+        ],
+        "threshold_used": 0.64,
+        "sensitivity": 0.9196,
+        "specificity": 0.9953,
+        "precision": 0.9717,
+        "f1_score": 0.945,
+        "confusion_matrix": {
+          "true_negatives": 635,
+          "false_positives": 3,
+          "false_negatives": 9,
+          "true_positives": 103
+        }
+      },
+      "PLATT_SCALING": {
+        "auroc": 0.9954,
+        "auprc": 0.9864,
+        "brier_score": 0.0116,
+        "nll_score": 0.0513,
+        "ece_score": 0.0104,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0024,
+            "empirical_accuracy": 0.0063,
+            "count": 637,
+            "gap": 0.0039
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1441,
+            "empirical_accuracy": 0.5,
+            "count": 4,
+            "gap": 0.3559
+          },
+          {
+            "bin_lower": 0.3,
+            "bin_upper": 0.4,
+            "avg_confidence": 0.398,
+            "empirical_accuracy": 1.0,
+            "count": 1,
+            "gap": 0.602
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "avg_confidence": 0.4504,
+            "empirical_accuracy": 1.0,
+            "count": 2,
+            "gap": 0.5496
+          },
+          {
+            "bin_lower": 0.7,
+            "bin_upper": 0.8,
+            "avg_confidence": 0.7263,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.7263
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "avg_confidence": 0.8026,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.8026
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "avg_confidence": 0.9838,
+            "empirical_accuracy": 0.9904,
+            "count": 104,
+            "gap": 0.0065
+          }
+        ],
+        "threshold_used": 0.67,
+        "sensitivity": 0.9196,
+        "specificity": 0.9953,
+        "precision": 0.9717,
+        "f1_score": 0.945,
+        "confusion_matrix": {
+          "true_negatives": 635,
+          "false_positives": 3,
+          "false_negatives": 9,
+          "true_positives": 103
+        }
+      },
+      "ISOTONIC_CALIBRATION": {
+        "auroc": 0.9807,
+        "auprc": 0.956,
+        "brier_score": 0.014,
+        "nll_score": 0.2059,
+        "ece_score": 0.0133,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0,
+            "empirical_accuracy": 0.0063,
+            "count": 635,
+            "gap": 0.0063
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1429,
+            "empirical_accuracy": 0.5556,
+            "count": 9,
+            "gap": 0.4127
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "avg_confidence": 0.9933,
+            "empirical_accuracy": 0.9717,
+            "count": 106,
+            "gap": 0.0216
+          }
+        ],
+        "threshold_used": 0.15,
+        "sensitivity": 0.9196,
+        "specificity": 0.9953,
+        "precision": 0.9717,
+        "f1_score": 0.945,
+        "confusion_matrix": {
+          "true_negatives": 635,
+          "false_positives": 3,
+          "false_negatives": 9,
+          "true_positives": 103
+        }
+      }
+    }
+  },
   "test_metrics": {
     "auroc": 0.9954,
     "auprc": 0.9864,
-    "brier_score": 0.0111,
-    "threshold_used": 0.35,
-    "sensitivity": 0.9643,
-    "specificity": 0.9922,
-    "precision": 0.9558,
-    "f1_score": 0.96,
+    "brier_score": 0.0116,
+    "nll_score": 0.0513,
+    "ece_score": 0.0104,
+    "threshold_used": 0.67,
+    "sensitivity": 0.9196,
+    "specificity": 0.9953,
+    "precision": 0.9717,
+    "f1_score": 0.945,
     "confusion_matrix": {
-      "true_negatives": 633,
-      "false_positives": 5,
-      "false_negatives": 4,
-      "true_positives": 108
+      "true_negatives": 635,
+      "false_positives": 3,
+      "false_negatives": 9,
+      "true_positives": 103
     },
-    "model_name": "LightGBM Gradient Boosted Decision Trees"
+    "model_name": "LightGBM Gradient Boosted Decision Trees (PLATT_SCALING)"
   },
   "chf_secondary_metrics": {
     "auroc": 0.7176,
     "auprc": 0.2678,
     "brier_score": 0.1798,
+    "ece_score": 0.2271,
     "threshold_used": 0.33,
     "sensitivity": 0.835,
     "specificity": 0.5672,
@@ -40,103 +519,103 @@
   "top_features": [
     {
       "feature": "ph_arterial",
-      "importance": 0.47947
-    },
-    {
-      "feature": "inr",
-      "importance": 0.33851
+      "importance": 0.51436
     },
     {
       "feature": "respiratory_rate_mean",
-      "importance": 0.33234
+      "importance": 0.36442
     },
     {
       "feature": "shock_index",
-      "importance": 0.32664
+      "importance": 0.30852
+    },
+    {
+      "feature": "inr",
+      "importance": 0.30403
     },
     {
       "feature": "spo2_mean",
-      "importance": 0.30292
-    },
-    {
-      "feature": "bicarbonate",
-      "importance": 0.30113
+      "importance": 0.25975
     },
     {
       "feature": "platelet_count",
-      "importance": 0.22342
+      "importance": 0.23228
+    },
+    {
+      "feature": "bicarbonate",
+      "importance": 0.23175
     },
     {
       "feature": "respiratory_rate_min",
-      "importance": 0.11635
+      "importance": 0.13083
     },
     {
       "feature": "temp_celsius_max",
-      "importance": 0.0825
+      "importance": 0.08337
     },
     {
       "feature": "temp_celsius_min",
       "importance": 0.0677
     },
     {
-      "feature": "spo2_max",
-      "importance": 0.06566
-    },
-    {
       "feature": "temp_celsius_mean",
-      "importance": 0.06339
+      "importance": 0.06366
     },
     {
-      "feature": "hr_min",
-      "importance": 0.04382
+      "feature": "spo2_max",
+      "importance": 0.0563
     },
     {
       "feature": "temp_deviation",
-      "importance": 0.0427
+      "importance": 0.04525
     },
     {
-      "feature": "spo2_min",
-      "importance": 0.03764
+      "feature": "hr_min",
+      "importance": 0.04098
     },
     {
       "feature": "respiratory_rate_max",
-      "importance": 0.0343
+      "importance": 0.0376
+    },
+    {
+      "feature": "spo2_min",
+      "importance": 0.03386
     },
     {
       "feature": "ph_arterial_missing",
-      "importance": 0.0207
+      "importance": 0.01939
     },
     {
       "feature": "wbc",
-      "importance": 0.0183
+      "importance": 0.01902
     },
     {
       "feature": "age",
-      "importance": 0.01248
+      "importance": 0.01415
     },
     {
       "feature": "hr_max",
-      "importance": 0.01138
+      "importance": 0.0119
     },
     {
       "feature": "dbp_mean",
-      "importance": 0.01013
+      "importance": 0.01075
     },
     {
       "feature": "hr_mean",
-      "importance": 0.00865
+      "importance": 0.00715
     },
     {
       "feature": "bicarbonate_missing",
-      "importance": 0.00555
+      "importance": 0.00426
     },
     {
       "feature": "insurance_Medicare",
-      "importance": 0.00174
+      "importance": 0.00225
     },
     {
-      "feature": "sbp_min",
-      "importance": 0.00068
+      "feature": "hematocrit",
+      "importance": 0.00092
     }
   ],
   "feature_cols": [

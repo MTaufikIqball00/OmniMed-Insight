@@ -1,105 +1,610 @@
 {
   "model_id": "omnimed-icu-lightgbm-v1",
-  "algorithm": "lightgbm",
+  "algorithm": "lightgbm_monotonic",
   "prediction_horizon": "6_to_12_hours_before_sepsis",
-  "decision_threshold": 0.0326,
-  "test_metrics": {
-    "auroc": 0.8663,
-    "auprc": 0.066,
-    "brier_score": 0.0232,
-    "threshold_used": 0.0326,
-    "sensitivity": 1.0,
-    "specificity": 0.5644,
-    "precision": 0.0374,
-    "f1_score": 0.072,
-    "confusion_matrix": {
-      "true_negatives": 434,
-      "false_positives": 335,
-      "false_negatives": 0,
-      "true_positives": 13
+  "decision_threshold": 0.02,
+  "calibrated_threshold": 0.02,
+  "calibration_method": "ISOTONIC_CALIBRATION",
+  "ece_score": 0.0005,
+  "monotone_constraints_active": true,
+  "monotone_constraints_map": {
+    "Age": 0,
+    "Gender": 0,
+    "HR_missing": 0,
+    "HR_latest": 1,
+    "HR_time_since_meas": 0,
+    "HR_roll_mean_6h": 0,
+    "HR_roll_min_6h": 0,
+    "HR_roll_max_6h": 1,
+    "HR_roll_std_6h": 0,
+    "HR_trend_3h": 0,
+    "O2Sat_missing": 0,
+    "O2Sat_latest": -1,
+    "O2Sat_time_since_meas": 0,
+    "O2Sat_roll_mean_6h": 0,
+    "O2Sat_roll_min_6h": 0,
+    "O2Sat_roll_max_6h": 0,
+    "O2Sat_roll_std_6h": 0,
+    "O2Sat_trend_3h": 0,
+    "Temp_missing": 0,
+    "Temp_latest": 0,
+    "Temp_time_since_meas": 0,
+    "Temp_roll_mean_6h": 0,
+    "Temp_roll_min_6h": 0,
+    "Temp_roll_max_6h": 0,
+    "Temp_roll_std_6h": 0,
+    "Temp_trend_3h": 0,
+    "SBP_missing": 0,
+    "SBP_latest": -1,
+    "SBP_time_since_meas": 0,
+    "SBP_roll_mean_6h": 0,
+    "SBP_roll_min_6h": 0,
+    "SBP_roll_max_6h": 0,
+    "SBP_roll_std_6h": 0,
+    "SBP_trend_3h": 0,
+    "MAP_missing": 0,
+    "MAP_latest": -1,
+    "MAP_time_since_meas": 0,
+    "MAP_roll_mean_6h": -1,
+    "MAP_roll_min_6h": -1,
+    "MAP_roll_max_6h": 0,
+    "MAP_roll_std_6h": 0,
+    "MAP_trend_3h": 0,
+    "DBP_missing": 0,
+    "DBP_latest": 0,
+    "DBP_time_since_meas": 0,
+    "DBP_roll_mean_6h": 0,
+    "DBP_roll_min_6h": 0,
+    "DBP_roll_max_6h": 0,
+    "DBP_roll_std_6h": 0,
+    "DBP_trend_3h": 0,
+    "Resp_missing": 0,
+    "Resp_latest": 1,
+    "Resp_time_since_meas": 0,
+    "Resp_roll_mean_6h": 0,
+    "Resp_roll_min_6h": 0,
+    "Resp_roll_max_6h": 1,
+    "Resp_roll_std_6h": 0,
+    "Resp_trend_3h": 0,
+    "Lactate_missing": 0,
+    "Lactate_latest": 1,
+    "Lactate_time_since_meas": 0,
+    "Lactate_roll_mean_6h": 1,
+    "Lactate_roll_min_6h": 1,
+    "Lactate_roll_max_6h": 1,
+    "Lactate_roll_std_6h": 0,
+    "Lactate_trend_3h": 1,
+    "WBC_missing": 0,
+    "WBC_latest": 0,
+    "WBC_time_since_meas": 0,
+    "WBC_roll_mean_6h": 0,
+    "WBC_roll_min_6h": 0,
+    "WBC_roll_max_6h": 0,
+    "WBC_roll_std_6h": 0,
+    "WBC_trend_3h": 0,
+    "Creatinine_missing": 0,
+    "Creatinine_latest": 1,
+    "Creatinine_time_since_meas": 0,
+    "Creatinine_roll_mean_6h": 0,
+    "Creatinine_roll_min_6h": 0,
+    "Creatinine_roll_max_6h": 0,
+    "Creatinine_roll_std_6h": 0,
+    "Creatinine_trend_3h": 0,
+    "Platelets_missing": 0,
+    "Platelets_latest": -1,
+    "Platelets_time_since_meas": 0,
+    "Platelets_roll_mean_6h": 0,
+    "Platelets_roll_min_6h": 0,
+    "Platelets_roll_max_6h": 0,
+    "Platelets_roll_std_6h": 0,
+    "Platelets_trend_3h": 0,
+    "Glucose_missing": 0,
+    "Glucose_latest": 0,
+    "Glucose_time_since_meas": 0,
+    "Glucose_roll_mean_6h": 0,
+    "Glucose_roll_min_6h": 0,
+    "Glucose_roll_max_6h": 0,
+    "Glucose_roll_std_6h": 0,
+    "Glucose_trend_3h": 0,
+    "BUN_missing": 0,
+    "BUN_latest": 1,
+    "BUN_time_since_meas": 0,
+    "BUN_roll_mean_6h": 0,
+    "BUN_roll_min_6h": 0,
+    "BUN_roll_max_6h": 0,
+    "BUN_roll_std_6h": 0,
+    "BUN_trend_3h": 0,
+    "HCO3_missing": 0,
+    "HCO3_latest": 0,
+    "HCO3_time_since_meas": 0,
+    "HCO3_roll_mean_6h": 0,
+    "HCO3_roll_min_6h": -1,
+    "HCO3_roll_max_6h": 0,
+    "HCO3_roll_std_6h": 0,
+    "HCO3_trend_3h": 0,
+    "shock_index": 1,
+    "pulse_pressure": 0,
+    "map_hypoperfusion_depth": 1,
+    "temp_deviation": 1,
+    "qsofa_vital_score": 1
+  },
+  "reliability_bins": [
+    {
+      "bin_lower": 0.0,
+      "bin_upper": 0.1,
+      "avg_confidence": 0.0106,
+      "empirical_accuracy": 0.0104,
+      "count": 5585,
+      "gap": 0.0002
     },
-    "model_name": "LightGBM Gradient Boosted Decision Trees"
+    {
+      "bin_lower": 0.1,
+      "bin_upper": 0.2,
+      "avg_confidence": 0.1338,
+      "empirical_accuracy": 0.1364,
+      "count": 22,
+      "gap": 0.0025
+    },
+    {
+      "bin_lower": 0.2,
+      "bin_upper": 0.3,
+      "avg_confidence": 0.2,
+      "empirical_accuracy": 0.1111,
+      "count": 18,
+      "gap": 0.0889
+    }
+  ],
+  "cohort_summary": {
+    "dataset_source": "PhysioNet Challenge 2019 (CC BY 4.0)",
+    "total_raw_files_scanned": 1000,
+    "eligible_patients": 988,
+    "excluded_patients": 12,
+    "hospital_system_a_patients": 492,
+    "hospital_system_b_patients": 496,
+    "total_positive_stays": 59,
+    "total_hourly_records": 38270,
+    "total_positive_rows": 407,
+    "split_sizes": {
+      "train_patients": 691,
+      "train_positive_stays": 41,
+      "train_rows": 27179,
+      "train_positive_rows": 281,
+      "val_patients": 148,
+      "val_positive_stays": 9,
+      "val_rows": 5466,
+      "val_positive_rows": 63,
+      "test_patients": 149,
+      "test_positive_stays": 9,
+      "test_rows": 5625,
+      "test_positive_rows": 63
+    },
+    "patient_overlap_check": "PASSED_ZERO_OVERLAP"
+  },
+  "test_metrics": {
+    "auroc": 0.7817,
+    "auprc": 0.0486,
+    "brier_score": 0.0108,
+    "nll_score": 0.0662,
+    "ece_score": 0.0005,
+    "threshold_used": 0.02,
+    "sensitivity": 0.6508,
+    "specificity": 0.7504,
+    "precision": 0.0287,
+    "f1_score": 0.055,
+    "confusion_matrix": {
+      "true_negatives": 4174,
+      "false_positives": 1388,
+      "false_negatives": 22,
+      "true_positives": 41
+    },
+    "model_name": "LightGBM Monotonic + ISOTONIC_CALIBRATION"
+  },
+  "monotonicity_comparison": {
+    "before_unconstrained": {
+      "auroc": 0.7699,
+      "auprc": 0.0458,
+      "brier_score": 0.0109,
+      "ece_score": 0.0037,
+      "sensitivity": 0.7143,
+      "specificity": 0.6507,
+      "f1_score": 0.0439,
+      "threshold_used": 0.0057
+    },
+    "after_monotonic_uncalibrated": {
+      "auroc": 0.7822,
+      "auprc": 0.0688,
+      "brier_score": 0.0108,
+      "ece_score": 0.0039,
+      "sensitivity": 0.6667,
+      "specificity": 0.731,
+      "f1_score": 0.0525,
+      "threshold_used": 0.0073
+    },
+    "after_monotonic_calibrated": {
+      "auroc": 0.7817,
+      "auprc": 0.0486,
+      "brier_score": 0.0108,
+      "ece_score": 0.0005,
+      "sensitivity": 0.6508,
+      "specificity": 0.7504,
+      "f1_score": 0.055,
+      "threshold_used": 0.02,
+      "calibration_method": "ISOTONIC_CALIBRATION"
+    }
+  },
+  "calibration_comparison": {
+    "validation": {
+      "NONE_UNCALIBRATED": {
+        "auroc": 0.8206,
+        "auprc": 0.0476,
+        "brier_score": 0.0112,
+        "nll_score": 0.0563,
+        "ece_score": 0.004,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0075,
+            "empirical_accuracy": 0.0115,
+            "count": 5465,
+            "gap": 0.004
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1007,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.1007
+          }
+        ]
+      },
+      "PLATT_SCALING": {
+        "auroc": 0.8168,
+        "auprc": 0.047,
+        "brier_score": 0.0113,
+        "nll_score": 0.0585,
+        "ece_score": 0.0009,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0106,
+            "empirical_accuracy": 0.011,
+            "count": 5435,
+            "gap": 0.0004
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1333,
+            "empirical_accuracy": 0.0909,
+            "count": 22,
+            "gap": 0.0424
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.3,
+            "avg_confidence": 0.2292,
+            "empirical_accuracy": 0.1429,
+            "count": 7,
+            "gap": 0.0864
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "avg_confidence": 0.4462,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.4462
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6,
+            "avg_confidence": 0.5124,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.5124
+          }
+        ]
+      },
+      "ISOTONIC_CALIBRATION": {
+        "auroc": 0.8008,
+        "auprc": 0.0381,
+        "brier_score": 0.0113,
+        "nll_score": 0.0594,
+        "ece_score": 0.0004,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0111,
+            "empirical_accuracy": 0.0112,
+            "count": 5448,
+            "gap": 0.0001
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1246,
+            "empirical_accuracy": 0.1429,
+            "count": 14,
+            "gap": 0.0183
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.3,
+            "avg_confidence": 0.25,
+            "empirical_accuracy": 0.0,
+            "count": 2,
+            "gap": 0.25
+          },
+          {
+            "bin_lower": 0.3,
+            "bin_upper": 0.4,
+            "avg_confidence": 0.3333,
+            "empirical_accuracy": 0.0,
+            "count": 2,
+            "gap": 0.3333
+          }
+        ]
+      }
+    },
+    "test": {
+      "NONE_UNCALIBRATED": {
+        "auroc": 0.7822,
+        "auprc": 0.0688,
+        "brier_score": 0.0108,
+        "nll_score": 0.0556,
+        "ece_score": 0.0039,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0072,
+            "empirical_accuracy": 0.011,
+            "count": 5615,
+            "gap": 0.0039
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1108,
+            "empirical_accuracy": 0.1,
+            "count": 10,
+            "gap": 0.0108
+          }
+        ],
+        "threshold_used": 0.0073,
+        "sensitivity": 0.6667,
+        "specificity": 0.731,
+        "precision": 0.0273,
+        "f1_score": 0.0525,
+        "confusion_matrix": {
+          "true_negatives": 4066,
+          "false_positives": 1496,
+          "false_negatives": 21,
+          "true_positives": 42
+        }
+      },
+      "PLATT_SCALING": {
+        "auroc": 0.7822,
+        "auprc": 0.0688,
+        "brier_score": 0.0113,
+        "nll_score": 0.0568,
+        "ece_score": 0.0019,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0102,
+            "empirical_accuracy": 0.0099,
+            "count": 5570,
+            "gap": 0.0003
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1345,
+            "empirical_accuracy": 0.1111,
+            "count": 27,
+            "gap": 0.0234
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.3,
+            "avg_confidence": 0.2378,
+            "empirical_accuracy": 0.3077,
+            "count": 13,
+            "gap": 0.0699
+          },
+          {
+            "bin_lower": 0.3,
+            "bin_upper": 0.4,
+            "avg_confidence": 0.3204,
+            "empirical_accuracy": 0.0,
+            "count": 2,
+            "gap": 0.3204
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "avg_confidence": 0.412,
+            "empirical_accuracy": 0.0,
+            "count": 3,
+            "gap": 0.412
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6,
+            "avg_confidence": 0.5634,
+            "empirical_accuracy": 0.0,
+            "count": 7,
+            "gap": 0.5634
+          },
+          {
+            "bin_lower": 0.6,
+            "bin_upper": 0.7,
+            "avg_confidence": 0.6061,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.6061
+          },
+          {
+            "bin_lower": 0.7,
+            "bin_upper": 0.8,
+            "avg_confidence": 0.7316,
+            "empirical_accuracy": 1.0,
+            "count": 1,
+            "gap": 0.2684
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "avg_confidence": 0.8474,
+            "empirical_accuracy": 0.0,
+            "count": 1,
+            "gap": 0.8474
+          }
+        ],
+        "threshold_used": 0.0092,
+        "sensitivity": 0.6667,
+        "specificity": 0.7337,
+        "precision": 0.0276,
+        "f1_score": 0.053,
+        "confusion_matrix": {
+          "true_negatives": 4081,
+          "false_positives": 1481,
+          "false_negatives": 21,
+          "true_positives": 42
+        }
+      },
+      "ISOTONIC_CALIBRATION": {
+        "auroc": 0.7817,
+        "auprc": 0.0486,
+        "brier_score": 0.0108,
+        "nll_score": 0.0662,
+        "ece_score": 0.0005,
+        "reliability_bins": [
+          {
+            "bin_lower": 0.0,
+            "bin_upper": 0.1,
+            "avg_confidence": 0.0106,
+            "empirical_accuracy": 0.0104,
+            "count": 5585,
+            "gap": 0.0002
+          },
+          {
+            "bin_lower": 0.1,
+            "bin_upper": 0.2,
+            "avg_confidence": 0.1338,
+            "empirical_accuracy": 0.1364,
+            "count": 22,
+            "gap": 0.0025
+          },
+          {
+            "bin_lower": 0.2,
+            "bin_upper": 0.3,
+            "avg_confidence": 0.2,
+            "empirical_accuracy": 0.1111,
+            "count": 18,
+            "gap": 0.0889
+          }
+        ],
+        "threshold_used": 0.02,
+        "sensitivity": 0.6508,
+        "specificity": 0.7504,
+        "precision": 0.0287,
+        "f1_score": 0.055,
+        "confusion_matrix": {
+          "true_negatives": 4174,
+          "false_positives": 1388,
+          "false_negatives": 22,
+          "true_positives": 41
+        }
+      }
+    }
   },
   "top_features": [
     {
-      "feature": "pulse_pressure",
-      "importance": 0.56194
-    },
-    {
-      "feature": "Lactate_roll_max_6h",
-      "importance": 0.26021
-    },
-    {
-      "feature": "Resp_roll_std_6h",
-      "importance": 0.21338
-    },
-    {
-      "feature": "HR_roll_max_6h",
-      "importance": 0.18587
-    },
-    {
-      "feature": "Glucose_roll_min_6h",
-      "importance": 0.17658
-    },
-    {
-      "feature": "Temp_latest",
-      "importance": 0.1435
-    },
-    {
-      "feature": "Lactate_roll_mean_6h",
-      "importance": 0.13387
-    },
-    {
-      "feature": "BUN_roll_min_6h",
-      "importance": 0.1145
-    },
-    {
-      "feature": "Temp_roll_std_6h",
-      "importance": 0.06017
-    },
-    {
-      "feature": "HR_roll_min_6h",
-      "importance": 0.04519
-    },
-    {
-      "feature": "SBP_roll_max_6h",
-      "importance": 0.04318
-    },
-    {
-      "feature": "Lactate_latest",
-      "importance": 0.03218
+      "feature": "BUN_roll_mean_6h",
+      "importance": 0.31634
     },
     {
       "feature": "Temp_roll_max_6h",
-      "importance": 0.03074
+      "importance": 0.26243
+    },
+    {
+      "feature": "HR_roll_mean_6h",
+      "importance": 0.24861
+    },
+    {
+      "feature": "WBC_latest",
+      "importance": 0.18798
+    },
+    {
+      "feature": "HR_roll_max_6h",
+      "importance": 0.0968
+    },
+    {
+      "feature": "DBP_missing",
+      "importance": 0.08948
+    },
+    {
+      "feature": "Temp_latest",
+      "importance": 0.08536
+    },
+    {
+      "feature": "Lactate_roll_std_6h",
+      "importance": 0.08479
+    },
+    {
+      "feature": "Temp_roll_std_6h",
+      "importance": 0.08044
     },
     {
       "feature": "Age",
-      "importance": 0.02866
+      "importance": 0.07777
     },
     {
-      "feature": "MAP_roll_min_6h",
-      "importance": 0.02526
+      "feature": "Platelets_roll_max_6h",
+      "importance": 0.07328
     },
     {
-      "feature": "BUN_roll_mean_6h",
-      "importance": 0.02204
+      "feature": "O2Sat_roll_max_6h",
+      "importance": 0.06913
     },
     {
-      "feature": "DBP_roll_max_6h",
-      "importance": 0.02156
+      "feature": "WBC_roll_min_6h",
+      "importance": 0.06721
     },
     {
-      "feature": "BUN_latest",
-      "importance": 0.02108
+      "feature": "BUN_roll_min_6h",
+      "importance": 0.06685
     },
     {
-      "feature": "Resp_roll_max_6h",
-      "importance": 0.01781
+      "feature": "Resp_roll_min_6h",
+      "importance": 0.05964
     },
     {
-      "feature": "HCO3_roll_min_6h",
-      "importance": 0.01715
+      "feature": "BUN_roll_max_6h",
+      "importance": 0.05147
+    },
+    {
+      "feature": "Creatinine_roll_min_6h",
+      "importance": 0.05134
+    },
+    {
+      "feature": "Glucose_roll_min_6h",
+      "importance": 0.04834
+    },
+    {
+      "feature": "Platelets_roll_min_6h",
+      "importance": 0.04795
+    },
+    {
+      "feature": "Creatinine_time_since_meas",
+      "importance": 0.04779
     }
   ],
   "feature_cols": [
@@ -224,121 +729,121 @@
     "qsofa_vital_score"
   ],
   "imputation_medians": {
-    "Age": 62.52,
+    "Age": 62.82,
     "Gender": 1.0,
     "HR_missing": 0.0,
-    "HR_latest": 88.0,
+    "HR_latest": 85.0,
     "HR_time_since_meas": 0.0,
-    "HR_roll_mean_6h": 88.0,
-    "HR_roll_min_6h": 82.0,
-    "HR_roll_max_6h": 96.0,
-    "HR_roll_std_6h": 4.135461378894322,
+    "HR_roll_mean_6h": 85.25,
+    "HR_roll_min_6h": 79.0,
+    "HR_roll_max_6h": 92.0,
+    "HR_roll_std_6h": 3.919183588453085,
     "HR_trend_3h": 0.0,
     "O2Sat_missing": 0.0,
-    "O2Sat_latest": 97.0,
+    "O2Sat_latest": 98.0,
     "O2Sat_time_since_meas": 0.0,
-    "O2Sat_roll_mean_6h": 97.42857142857143,
-    "O2Sat_roll_min_6h": 95.0,
+    "O2Sat_roll_mean_6h": 97.5,
+    "O2Sat_roll_min_6h": 96.0,
     "O2Sat_roll_max_6h": 99.0,
     "O2Sat_roll_std_6h": 0.989743318610787,
     "O2Sat_trend_3h": 0.0,
     "Temp_missing": 1.0,
-    "Temp_latest": 36.9,
+    "Temp_latest": 36.8,
     "Temp_time_since_meas": 1.0,
-    "Temp_roll_mean_6h": 36.864285714285714,
-    "Temp_roll_min_6h": 36.61,
-    "Temp_roll_max_6h": 37.1,
-    "Temp_roll_std_6h": 0.14907880397936568,
+    "Temp_roll_mean_6h": 36.794285714285714,
+    "Temp_roll_min_6h": 36.6,
+    "Temp_roll_max_6h": 37.0,
+    "Temp_roll_std_6h": 0.13552618543578962,
     "Temp_trend_3h": 0.0,
     "SBP_missing": 0.0,
-    "SBP_latest": 121.0,
+    "SBP_latest": 120.0,
     "SBP_time_since_meas": 0.0,
-    "SBP_roll_mean_6h": 120.57142857142857,
+    "SBP_roll_mean_6h": 120.0,
     "SBP_roll_min_6h": 107.0,
     "SBP_roll_max_6h": 133.0,
-    "SBP_roll_std_6h": 7.567384364656587,
+    "SBP_roll_std_6h": 7.989789402348321,
     "SBP_trend_3h": 0.0,
     "MAP_missing": 0.0,
-    "MAP_latest": 78.33,
+    "MAP_latest": 80.0,
     "MAP_time_since_meas": 0.0,
-    "MAP_roll_mean_6h": 78.25142857142858,
-    "MAP_roll_min_6h": 69.67,
-    "MAP_roll_max_6h": 88.0,
-    "MAP_roll_std_6h": 5.674864018868916,
+    "MAP_roll_mean_6h": 80.40285714285716,
+    "MAP_roll_min_6h": 71.5,
+    "MAP_roll_max_6h": 90.0,
+    "MAP_roll_std_6h": 5.627918743883488,
     "MAP_trend_3h": 0.0,
-    "DBP_missing": 1.0,
-    "DBP_latest": 61.5,
-    "DBP_time_since_meas": 5.0,
-    "DBP_roll_mean_6h": 62.142857142857146,
-    "DBP_roll_min_6h": 55.0,
-    "DBP_roll_max_6h": 69.0,
-    "DBP_roll_std_6h": 0.0,
+    "DBP_missing": 0.0,
+    "DBP_latest": 62.0,
+    "DBP_time_since_meas": 0.0,
+    "DBP_roll_mean_6h": 62.57142857142857,
+    "DBP_roll_min_6h": 56.0,
+    "DBP_roll_max_6h": 70.0,
+    "DBP_roll_std_6h": 3.619674131234265,
     "DBP_trend_3h": 0.0,
     "Resp_missing": 0.0,
     "Resp_latest": 18.0,
     "Resp_time_since_meas": 0.0,
-    "Resp_roll_mean_6h": 18.0,
-    "Resp_roll_min_6h": 15.0,
-    "Resp_roll_max_6h": 22.0,
-    "Resp_roll_std_6h": 2.1852940772540506,
+    "Resp_roll_mean_6h": 18.142857142857142,
+    "Resp_roll_min_6h": 15.5,
+    "Resp_roll_max_6h": 21.5,
+    "Resp_roll_std_6h": 1.979486637221574,
     "Resp_trend_3h": 0.0,
     "Lactate_missing": 1.0,
-    "Lactate_latest": 1.8,
+    "Lactate_latest": 1.6,
     "Lactate_time_since_meas": 48.0,
-    "Lactate_roll_mean_6h": 1.8000000000000003,
-    "Lactate_roll_min_6h": 1.8,
-    "Lactate_roll_max_6h": 2.0,
+    "Lactate_roll_mean_6h": 1.625,
+    "Lactate_roll_min_6h": 1.6,
+    "Lactate_roll_max_6h": 1.7,
     "Lactate_roll_std_6h": 0.0,
     "Lactate_trend_3h": 0.0,
     "WBC_missing": 1.0,
-    "WBC_latest": 11.0,
-    "WBC_time_since_meas": 9.0,
-    "WBC_roll_mean_6h": 11.057142857142859,
-    "WBC_roll_min_6h": 10.9,
-    "WBC_roll_max_6h": 11.3,
+    "WBC_latest": 10.5,
+    "WBC_time_since_meas": 10.0,
+    "WBC_roll_mean_6h": 10.585714285714285,
+    "WBC_roll_min_6h": 10.2,
+    "WBC_roll_max_6h": 10.9,
     "WBC_roll_std_6h": 0.0,
     "WBC_trend_3h": 0.0,
     "Creatinine_missing": 1.0,
-    "Creatinine_latest": 0.8,
+    "Creatinine_latest": 0.9,
     "Creatinine_time_since_meas": 9.0,
-    "Creatinine_roll_mean_6h": 0.7999999999999999,
-    "Creatinine_roll_min_6h": 0.71,
-    "Creatinine_roll_max_6h": 0.8,
+    "Creatinine_roll_mean_6h": 0.9128571428571429,
+    "Creatinine_roll_min_6h": 0.9,
+    "Creatinine_roll_max_6h": 0.93,
     "Creatinine_roll_std_6h": 0.0,
     "Creatinine_trend_3h": 0.0,
     "Platelets_missing": 1.0,
-    "Platelets_latest": 209.0,
-    "Platelets_time_since_meas": 9.0,
-    "Platelets_roll_mean_6h": 216.0,
-    "Platelets_roll_min_6h": 205.0,
-    "Platelets_roll_max_6h": 220.0,
+    "Platelets_latest": 191.0,
+    "Platelets_time_since_meas": 10.0,
+    "Platelets_roll_mean_6h": 192.0,
+    "Platelets_roll_min_6h": 188.0,
+    "Platelets_roll_max_6h": 195.0,
     "Platelets_roll_std_6h": 0.0,
     "Platelets_trend_3h": 0.0,
     "Glucose_missing": 1.0,
-    "Glucose_latest": 120.0,
-    "Glucose_time_since_meas": 6.0,
-    "Glucose_roll_mean_6h": 123.0,
-    "Glucose_roll_min_6h": 115.0,
-    "Glucose_roll_max_6h": 129.0,
+    "Glucose_latest": 125.0,
+    "Glucose_time_since_meas": 4.0,
+    "Glucose_roll_mean_6h": 126.42857142857143,
+    "Glucose_roll_min_6h": 116.0,
+    "Glucose_roll_max_6h": 135.0,
     "Glucose_roll_std_6h": 0.0,
     "Glucose_trend_3h": 0.0,
     "BUN_missing": 1.0,
-    "BUN_latest": 14.0,
+    "BUN_latest": 17.0,
     "BUN_time_since_meas": 9.0,
-    "BUN_roll_mean_6h": 14.0,
-    "BUN_roll_min_6h": 14.0,
-    "BUN_roll_max_6h": 14.0,
+    "BUN_roll_mean_6h": 17.0,
+    "BUN_roll_min_6h": 17.0,
+    "BUN_roll_max_6h": 17.0,
     "BUN_roll_std_6h": 0.0,
     "BUN_trend_3h": 0.0,
     "HCO3_missing": 1.0,
-    "HCO3_latest": 23.0,
-    "HCO3_time_since_meas": 10.0,
-    "HCO3_roll_mean_6h": 23.0,
-    "HCO3_roll_min_6h": 23.0,
+    "HCO3_latest": 24.0,
+    "HCO3_time_since_meas": 48.0,
+    "HCO3_roll_mean_6h": 24.0,
+    "HCO3_roll_min_6h": 24.0,
     "HCO3_roll_max_6h": 24.0,
     "HCO3_roll_std_6h": 0.0,
     "HCO3_trend_3h": 0.0,
-    "shock_index": 0.719626168224299,
+    "shock_index": 0.7009345794392523,
     "pulse_pressure": 57.0,
     "map_hypoperfusion_depth": 0.0,
     "temp_deviation": 0.4399999999999977,

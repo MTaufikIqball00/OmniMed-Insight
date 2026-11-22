@@ -1,0 +1,192 @@
+{
+  "format_version": "omnimed-checkpoint-v2",
+  "architecture": "densenet121",
+  "modality": "CXR",
+  "num_classes": 4,
+  "class_codes": [
+    "CXR_NO_ACUTE_FINDING",
+    "CXR_PARENCHYMAL_OPACITY",
+    "CXR_PLEURAL_EFFUSION",
+    "CXR_CARDIOMEGALY_BORDERLINE"
+  ],
+  "model_version": "densenet121-cxr-synth-bench-v1",
+  "checkpoint_data_provenance": "SYNTHETIC_BENCHMARK_FIXTURE",
+  "uncalibrated_checkpoint": {
+    "filename": "densenet121_cxr_synthetic_benchmark.pt",
+    "path": "C:\\Users\\taufi\\Documents\\Projects\\OmniMed Insight\\ai-service-python\\models\\imaging\\densenet121_cxr_synthetic_benchmark.pt",
+    "sha256": "0373da881e137e684c4d1477f840de742774a7778944e6f87980668300274b2c",
+    "size_bytes": 28422479
+  },
+  "calibrated_checkpoint": {
+    "filename": "densenet121_cxr_calibrated.pt",
+    "path": "C:\\Users\\taufi\\Documents\\Projects\\OmniMed Insight\\ai-service-python\\models\\imaging\\densenet121_cxr_calibrated.pt",
+    "sha256": "f4024854cc677b6bbaaeb70bde95dce07fa184497c7bb362a54fe7492aa27fba",
+    "size_bytes": 28416494,
+    "calibration_method": "TEMPERATURE_SCALING",
+    "calibration_validated": true,
+    "params": {
+      "method": "TEMPERATURE_SCALING",
+      "temperature": 0.4780328753792948
+    },
+    "ece_score": 0.0216,
+    "brier_score": 0.0113,
+    "nll_score": 0.0981,
+    "test_accuracy": 0.9722
+  },
+  "val_logits_npz": {
+    "filename": "val_logits.npz",
+    "sha256": "8cb406f5c4a21c988c0e73b2a5c1091b84a5f5eac58bc0f80f3c760801b01a2e",
+    "num_samples": 72
+  },
+  "test_logits_npz": {
+    "filename": "test_logits.npz",
+    "sha256": "6366bae37d4412e437004b0a7cc59eeaa68235c1a93f20e8fc6217a4fd5015a7",
+    "num_samples": 72
+  },
+  "training_provenance": {
+    "dataset_type": "SYNTHETIC_BENCHMARK_FIXTURE",
+    "is_synthetic_benchmark": true,
+    "manifest_csv": null,
+    "split_sizes": {
+      "train_patients": 168,
+      "val_patients": 36,
+      "test_patients": 36,
+      "train_images": 336,
+      "val_images": 72,
+      "test_images": 72
+    },
+    "train_class_counts": {
+      "0": 84,
+      "1": 84,
+      "2": 84,
+      "3": 84
+    },
+    "val_class_counts": {
+      "0": 18,
+      "1": 18,
+      "2": 18,
+      "3": 18
+    },
+    "test_class_counts": {
+      "0": 18,
+      "1": 18,
+      "2": 18,
+      "3": 18
+    },
+    "zero_patient_leakage_verified": true,
+    "seed": 42,
+    "epochs_requested": 12,
+    "epochs_trained": 12,
+    "best_epoch": 10,
+    "best_val_loss": 0.000435,
+    "val_accuracy": 1.0,
+    "val_nll": 0.0004,
+    "test_accuracy": 0.9722,
+    "test_nll": 0.06,
+    "max_abs_test_logit": 16.9507,
+    "train_device": "cuda:0",
+    "duration_seconds": 1620.53,
+    "history": [
+      {
+        "epoch": 1,
+        "train_loss": 0.72401,
+        "train_acc": 0.6905,
+        "val_loss": 2.95052,
+        "val_acc": 0.4028,
+        "lr": 0.0007864
+      },
+      {
+        "epoch": 2,
+        "train_loss": 0.48268,
+        "train_acc": 0.7917,
+        "val_loss": 1.68268,
+        "val_acc": 0.5,
+        "lr": 0.0007465
+      },
+      {
+        "epoch": 3,
+        "train_loss": 0.32609,
+        "train_acc": 0.878,
+        "val_loss": 0.04791,
+        "val_acc": 0.9722,
+        "lr": 0.000683
+      },
+      {
+        "epoch": 4,
+        "train_loss": 0.18238,
+        "train_acc": 0.9286,
+        "val_loss": 4.27779,
+        "val_acc": 0.5556,
+        "lr": 0.0006003
+      },
+      {
+        "epoch": 5,
+        "train_loss": 0.14267,
+        "train_acc": 0.9583,
+        "val_loss": 0.10227,
+        "val_acc": 0.9583,
+        "lr": 0.0005039
+      },
+      {
+        "epoch": 6,
+        "train_loss": 0.12463,
+        "train_acc": 0.9583,
+        "val_loss": 0.00709,
+        "val_acc": 1.0,
+        "lr": 0.0004005
+      },
+      {
+        "epoch": 7,
+        "train_loss": 0.04306,
+        "train_acc": 0.9851,
+        "val_loss": 0.0146,
+        "val_acc": 1.0,
+        "lr": 0.0002971
+      },
+      {
+        "epoch": 8,
+        "train_loss": 0.01484,
+        "train_acc": 0.997,
+        "val_loss": 0.00654,
+        "val_acc": 1.0,
+        "lr": 0.0002008
+      },
+      {
+        "epoch": 9,
+        "train_loss": 0.02161,
+        "train_acc": 0.9911,
+        "val_loss": 0.00139,
+        "val_acc": 1.0,
+        "lr": 0.000118
+      },
+      {
+        "epoch": 10,
+        "train_loss": 0.00947,
+        "train_acc": 0.997,
+        "val_loss": 0.00044,
+        "val_acc": 1.0,
+        "lr": 5.45e-05
+      },
+      {
+        "epoch": 11,
+        "train_loss": 0.00561,
+        "train_acc": 1.0,
+        "val_loss": 0.00066,
+        "val_acc": 1.0,
+        "lr": 1.46e-05
+      },
+      {
+        "epoch": 12,
+        "train_loss": 0.02876,
+        "train_acc": 0.9911,
+        "val_loss": 0.00042,
+        "val_acc": 1.0,
+        "lr": 1e-06
+      }
+    ]
+  },
+  "calibration_metrics_json": {
+    "filename": "calibration_metrics.json",
+    "sha256": "ecc549777c1ced28c2351085cbec221a25476af670cee34522751a3bd44a8846"
+  }
+}

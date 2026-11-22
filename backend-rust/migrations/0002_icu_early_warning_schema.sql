@@ -46,6 +46,11 @@ CREATE TABLE IF NOT EXISTS icu_predictions (
     model_version TEXT NOT NULL,
     data_quality_status TEXT NOT NULL,
     stale_warning TEXT,
+    calibration_method TEXT NOT NULL DEFAULT 'NONE_UNCALIBRATED',
+    ece_score REAL,
+    calibrated_threshold REAL,
+    monotone_constraints_active INTEGER NOT NULL DEFAULT 0,
+    reliability_bins_json TEXT NOT NULL DEFAULT '[]',
     shap_attributions_json TEXT NOT NULL DEFAULT '[]',
     vital_summary_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
@@ -89,6 +94,11 @@ CREATE TABLE IF NOT EXISTS icu_models (
     f1_score REAL NOT NULL,
     metrics_json TEXT NOT NULL DEFAULT '{}',
     top_features_json TEXT NOT NULL DEFAULT '[]',
+    calibration_method TEXT NOT NULL DEFAULT 'NONE_UNCALIBRATED',
+    ece_score REAL,
+    calibrated_threshold REAL,
+    monotone_constraints_active INTEGER NOT NULL DEFAULT 0,
+    reliability_bins_json TEXT NOT NULL DEFAULT '[]',
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );

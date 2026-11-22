@@ -59,9 +59,83 @@ pub async fn init_db(config: &AppConfig) -> Result<SqlitePool, String> {
         }
     }
 
+    ensure_research_telemetry_columns(&pool).await?;
+
     provision_initial_accounts_and_synthetic_data(&pool, config).await?;
     provision_icu_synthetic_demonstration_data(&pool).await?;
+    sync_icu_models_from_disk_if_present(&pool).await;
     Ok(pool)
+}
+
+pub async fn ensure_research_telemetry_columns(pool: &SqlitePool) -> Result<(), String> {
+    let migrations: &[(&str, &[(&str, &str)])] = &[
+        (
+            "analysis_jobs",
+            &[
+                ("calibration_method", "TEXT NOT NULL DEFAULT 'NONE_UNCALIBRATED'"),
+                ("ece_score", "REAL"),
+                ("brier_score", "REAL"),
+                ("nll_score", "REAL"),
+                ("checkpoint_sha256", "TEXT"),
+                (
+                    "checkpoint_data_provenance",
+                    "TEXT NOT NULL DEFAULT 'UNINITIALIZED_RESEARCH_BACKBONE'",
+                ),
+                ("reliability_bins_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ],
+        ),
+        (
+            "icu_predictions",
+            &[
+                ("calibration_method", "TEXT NOT NULL DEFAULT 'NONE_UNCALIBRATED'"),
+                ("ece_score", "REAL"),
+                ("calibrated_threshold", "REAL"),
+                ("monotone_constraints_active", "INTEGER NOT NULL DEFAULT 0"),
+                ("reliability_bins_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ],
+        ),
+        (
+            "icu_models",
+            &[
+                ("calibration_method", "TEXT NOT NULL DEFAULT 'NONE_UNCALIBRATED'"),
+                ("ece_score", "REAL"),
+                ("calibrated_threshold", "REAL"),
+                ("monotone_constraints_active", "INTEGER NOT NULL DEFAULT 0"),
+                ("reliability_bins_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ],
+        ),
+    ];
+
+    for &(table, columns) in migrations {
+        let pragma_sql = format!("PRAGMA table_info({})", table);
+        let rows = sqlx::query(&pragma_sql)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("Failed PRAGMA table_info({}): {}", table, e))?;
+
+        let existing_cols: std::collections::HashSet<String> = rows
+            .into_iter()
+            .filter_map(|r| {
+                use sqlx::Row;
+                r.try_get::<String, _>("name").ok()
+            })
+            .collect();
+
+        for &(col_name, col_def) in columns {
+            if !existing_cols.contains(col_name) {
+                let alter_sql =
+                    format!("ALTER TABLE {} ADD COLUMN {} {}", table, col_name, col_def);
+                sqlx::query(&alter_sql)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| {
+                        format!("Failed ALTER TABLE {} ADD COLUMN {}: {}", table, col_name, e)
+                    })?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn provision_initial_accounts_and_synthetic_data(
@@ -880,22 +954,28 @@ async fn provision_icu_synthetic_demonstration_data(pool: &SqlitePool) -> Result
     }
 
     // 4. Seed ICU Model Records (Primary Time-Series & Archive2 Cohort)
+    let primary_bins_json = r#"[{"bin_lower":0.0,"bin_upper":0.1,"avg_confidence":0.0106,"empirical_accuracy":0.0104,"count":5585,"gap":0.0002},{"bin_lower":0.1,"bin_upper":0.2,"avg_confidence":0.1338,"empirical_accuracy":0.1364,"count":22,"gap":0.0025},{"bin_lower":0.2,"bin_upper":0.3,"avg_confidence":0.2,"empirical_accuracy":0.1111,"count":18,"gap":0.0889}]"#;
+    let cohort_bins_json = r#"[{"bin_lower":0.0,"bin_upper":0.1,"avg_confidence":0.0024,"empirical_accuracy":0.0063,"count":637,"gap":0.0039},{"bin_lower":0.1,"bin_upper":0.2,"avg_confidence":0.1441,"empirical_accuracy":0.5,"count":4,"gap":0.3559},{"bin_lower":0.3,"bin_upper":0.4,"avg_confidence":0.398,"empirical_accuracy":1.0,"count":1,"gap":0.602},{"bin_lower":0.4,"bin_upper":0.5,"avg_confidence":0.4504,"empirical_accuracy":1.0,"count":2,"gap":0.5496},{"bin_lower":0.7,"bin_upper":0.8,"avg_confidence":0.7263,"empirical_accuracy":0.0,"count":1,"gap":0.7263},{"bin_lower":0.8,"bin_upper":0.9,"avg_confidence":0.8026,"empirical_accuracy":0.0,"count":1,"gap":0.8026},{"bin_lower":0.9,"bin_upper":1.0,"avg_confidence":0.9838,"empirical_accuracy":0.9904,"count":104,"gap":0.0065}]"#;
+
     sqlx::query(
         r#"
         INSERT INTO icu_models (
             id, model_id, model_name, version, algorithm, target_endpoint,
             prediction_horizon, decision_threshold, auroc, auprc, brier_score,
-            sensitivity, specificity, f1_score, metrics_json, top_features_json, is_active, created_at
+            sensitivity, specificity, f1_score, metrics_json, top_features_json,
+            calibration_method, ece_score, calibrated_threshold, monotone_constraints_active,
+            reliability_bins_json, is_active, created_at
         ) VALUES (
-            'model-icu-001', 'omnimed-icu-lightgbm-v1', 'LightGBM Temporal Sepsis-3 Early Warning Model',
-            '1.0.0', 'lightgbm', 'SEPSIS_DETERIORATION', '6_to_12_hours', 0.0326,
-            0.8663, 0.0660, 0.0232, 1.0000, 0.5644, 0.0720,
-            '{"auroc":0.8663,"auprc":0.0660,"brier_score":0.0232,"sensitivity":1.0,"specificity":0.5644,"cohort":"PhysioNet Challenge 2019 Test Set"}',
-            '[{"feature":"pulse_pressure","importance":0.56194,"rationale":"Narrowing pulse pressure indicates stroke volume collapse"},{"feature":"Lactate_roll_max_6h","importance":0.26021,"rationale":"Peak 6h serum lactate > 2.0 mmol/L reflects tissue hypoperfusion"},{"feature":"Resp_roll_std_6h","importance":0.21338,"rationale":"Respiratory rate volatility reflects compensatory ventilatory drive"}]',
-            1, ?
+            'model-icu-001', 'omnimed-icu-lightgbm-v1', 'LightGBM Monotonic Sepsis-3 Early Warning Model',
+            '2.0.0', 'lightgbm_monotonic', 'SEPSIS_DETERIORATION', '6_to_12_hours', 0.0200,
+            0.7817, 0.0486, 0.0108, 0.6508, 0.7504, 0.0550,
+            '{"auroc":0.7817,"auprc":0.0486,"brier_score":0.0108,"nll_score":0.0662,"ece_score":0.0005,"sensitivity":0.6508,"specificity":0.7504,"f1_score":0.055,"precision":0.0287,"cohort":"PhysioNet Challenge 2019 Test Set (988 Eligible Stays / 38,270 Rows)","cohort_summary":{"eligible_stays":988,"total_stays":1000,"total_rows":38270,"positive_stays":59,"positive_rows":407,"train_stays":691,"val_stays":148,"test_stays":149}}',
+            '[{"feature":"BUN_roll_mean_6h","importance":0.31634,"rationale":"Elevated 6h mean Blood Urea Nitrogen reflects sepsis-associated renal dysfunction"},{"feature":"Temp_roll_max_6h","importance":0.26243,"rationale":"Peak 6h core temperature tracks systemic inflammatory thermoregulatory disturbance"},{"feature":"HR_roll_mean_6h","importance":0.24861,"rationale":"Sustained 6h mean tachycardia reflects compensatory sympathetic surge"}]',
+            'ISOTONIC_CALIBRATION', 0.0005, 0.0200, 1, ?, 1, ?
         )
         "#,
     )
+    .bind(primary_bins_json)
     .bind(&now)
     .execute(pool)
     .await
@@ -906,17 +986,20 @@ async fn provision_icu_synthetic_demonstration_data(pool: &SqlitePool) -> Result
         INSERT INTO icu_models (
             id, model_id, model_name, version, algorithm, target_endpoint,
             prediction_horizon, decision_threshold, auroc, auprc, brier_score,
-            sensitivity, specificity, f1_score, metrics_json, top_features_json, is_active, created_at
+            sensitivity, specificity, f1_score, metrics_json, top_features_json,
+            calibration_method, ece_score, calibrated_threshold, monotone_constraints_active,
+            reliability_bins_json, is_active, created_at
         ) VALUES (
             'model-icu-002', 'omnimed-icu-cohort-lgbm-v1', 'Archive2 5,000-Patient ICU Cohort Sepsis & CHF Model',
-            '1.0.0', 'lightgbm', 'SEPSIS_AND_CHF_DETERIORATION', 'ICU_ADMISSION_AND_STAY', 0.3500,
-            0.9954, 0.9864, 0.0111, 0.9643, 0.9922, 0.9600,
-            '{"auroc":0.9954,"auprc":0.9864,"brier_score":0.0111,"chf_auroc":0.7176,"chf_auprc":0.2678,"cohort":"Archive2 5,000-Patient Synthetic ICU Cohort (Anti-Leakage Filtered)"}',
-            '[{"feature":"ph_arterial","importance":0.47947,"rationale":"Arterial acidemia in uncompensated septic shock"},{"feature":"inr","importance":0.33851,"rationale":"Sepsis-induced coagulopathy marker"},{"feature":"shock_index","importance":0.32664,"rationale":"Heart rate to systolic BP ratio indicating occult shock"}]',
-            1, ?
+            '2.0.0', 'lightgbm', 'SEPSIS_AND_CHF_DETERIORATION', 'ICU_ADMISSION_AND_STAY', 0.6700,
+            0.9954, 0.9864, 0.0116, 0.9196, 0.9953, 0.9450,
+            '{"auroc":0.9954,"auprc":0.9864,"brier_score":0.0116,"nll_score":0.0513,"ece_score":0.0104,"sensitivity":0.9196,"specificity":0.9953,"f1_score":0.945,"chf_auroc":0.7176,"chf_auprc":0.2678,"cohort":"Archive2 5,000-Patient Synthetic ICU Cohort (Anti-Leakage Filtered, Platt Calibrated)"}',
+            '[{"feature":"ph_arterial","importance":0.51436,"rationale":"Arterial acidemia in uncompensated septic shock"},{"feature":"respiratory_rate_mean","importance":0.36442,"rationale":"Tachypnea compensating for metabolic acidosis or hypoxemia"},{"feature":"shock_index","importance":0.30852,"rationale":"Heart rate to systolic BP ratio indicating occult shock"}]',
+            'PLATT_SCALING', 0.0104, 0.6700, 0, ?, 1, ?
         )
         "#,
     )
+    .bind(cohort_bins_json)
     .bind(&now)
     .execute(pool)
     .await
@@ -984,15 +1067,19 @@ async fn provision_icu_synthetic_demonstration_data(pool: &SqlitePool) -> Result
         INSERT INTO icu_predictions (
             id, stay_id, patient_id, requested_by, prediction_time, prediction_horizon,
             risk_score, risk_tier, decision_threshold, model_id, model_version,
-            data_quality_status, stale_warning, shap_attributions_json, vital_summary_json, created_at
+            data_quality_status, stale_warning, calibration_method, ece_score,
+            calibrated_threshold, monotone_constraints_active, reliability_bins_json,
+            shap_attributions_json, vital_summary_json, created_at
         ) VALUES (
             'pred-synth-001', 'stay-synth-001', 'pat-synth-001', 'usr-clinician-001',
-            'ICU Hour 14', '6_to_12_hours', 0.185, 'CRITICAL', 0.0326,
-            'omnimed-icu-lightgbm-v1', '1.0.0', 'ADEQUATE', NULL,
+            'ICU Hour 14', '6_to_12_hours', 0.185, 'CRITICAL', 0.0200,
+            'omnimed-icu-lightgbm-v1', '2.0.0', 'ADEQUATE', NULL,
+            'ISOTONIC_CALIBRATION', 0.0005, 0.0200, 1, ?,
             ?, ?, ?
         )
         "#,
     )
+    .bind(primary_bins_json)
     .bind(&shap_001)
     .bind(&vital_001)
     .bind(&now)
@@ -1037,15 +1124,19 @@ async fn provision_icu_synthetic_demonstration_data(pool: &SqlitePool) -> Result
         INSERT INTO icu_predictions (
             id, stay_id, patient_id, requested_by, prediction_time, prediction_horizon,
             risk_score, risk_tier, decision_threshold, model_id, model_version,
-            data_quality_status, stale_warning, shap_attributions_json, vital_summary_json, created_at
+            data_quality_status, stale_warning, calibration_method, ece_score,
+            calibrated_threshold, monotone_constraints_active, reliability_bins_json,
+            shap_attributions_json, vital_summary_json, created_at
         ) VALUES (
             'pred-synth-002', 'stay-synth-002', 'pat-synth-002', 'usr-clinician-001',
-            'ICU Hour 8', '6_to_12_hours', 0.0085, 'LOW', 0.0326,
-            'omnimed-icu-lightgbm-v1', '1.0.0', 'ADEQUATE', NULL,
+            'ICU Hour 8', '6_to_12_hours', 0.0085, 'LOW', 0.0200,
+            'omnimed-icu-lightgbm-v1', '2.0.0', 'ADEQUATE', NULL,
+            'ISOTONIC_CALIBRATION', 0.0005, 0.0200, 1, ?,
             ?, ?, ?
         )
         "#,
     )
+    .bind(primary_bins_json)
     .bind(&shap_002)
     .bind(&vital_002)
     .bind(&now)
@@ -1082,15 +1173,19 @@ async fn provision_icu_synthetic_demonstration_data(pool: &SqlitePool) -> Result
         INSERT INTO icu_predictions (
             id, stay_id, patient_id, requested_by, prediction_time, prediction_horizon,
             risk_score, risk_tier, decision_threshold, model_id, model_version,
-            data_quality_status, stale_warning, shap_attributions_json, vital_summary_json, created_at
+            data_quality_status, stale_warning, calibration_method, ece_score,
+            calibrated_threshold, monotone_constraints_active, reliability_bins_json,
+            shap_attributions_json, vital_summary_json, created_at
         ) VALUES (
             'pred-synth-003', 'stay-synth-003', 'pat-synth-003', 'usr-admin-001',
-            'ICU Hour 8', '6_to_12_hours', 0.024, 'MODERATE', 0.0326,
-            'omnimed-icu-lightgbm-v1', '1.0.0', 'ADEQUATE', NULL,
+            'ICU Hour 8', '6_to_12_hours', 0.024, 'MODERATE', 0.0200,
+            'omnimed-icu-lightgbm-v1', '2.0.0', 'ADEQUATE', NULL,
+            'ISOTONIC_CALIBRATION', 0.0005, 0.0200, 1, ?,
             ?, ?, ?
         )
         "#,
     )
+    .bind(primary_bins_json)
     .bind(&shap_003)
     .bind(&vital_003)
     .bind(&now)
@@ -1135,15 +1230,19 @@ async fn provision_icu_synthetic_demonstration_data(pool: &SqlitePool) -> Result
         INSERT INTO icu_predictions (
             id, stay_id, patient_id, requested_by, prediction_time, prediction_horizon,
             risk_score, risk_tier, decision_threshold, model_id, model_version,
-            data_quality_status, stale_warning, shap_attributions_json, vital_summary_json, created_at
+            data_quality_status, stale_warning, calibration_method, ece_score,
+            calibrated_threshold, monotone_constraints_active, reliability_bins_json,
+            shap_attributions_json, vital_summary_json, created_at
         ) VALUES (
             'pred-synth-004', 'stay-synth-004', 'pat-synth-001', 'usr-clinician-001',
-            'ICU Hour 6', '6_to_12_hours', 0.148, 'CRITICAL', 0.0326,
-            'omnimed-icu-lightgbm-v1', '1.0.0', 'ADEQUATE', NULL,
+            'ICU Hour 6', '6_to_12_hours', 0.148, 'CRITICAL', 0.0200,
+            'omnimed-icu-lightgbm-v1', '2.0.0', 'ADEQUATE', NULL,
+            'ISOTONIC_CALIBRATION', 0.0005, 0.0200, 1, ?,
             ?, ?, ?
         )
         "#,
     )
+    .bind(primary_bins_json)
     .bind(&shap_004)
     .bind(&vital_004)
     .bind(&now)
@@ -1188,5 +1287,144 @@ async fn provision_icu_synthetic_demonstration_data(pool: &SqlitePool) -> Result
     .map_err(|e| format!("Failed to insert alert-synth-004: {}", e))?;
 
     Ok(())
+}
+
+async fn sync_single_icu_model_from_meta(
+    pool: &SqlitePool,
+    target_model_id: &str,
+    meta: &serde_json::Value,
+    default_thresh: f64,
+    metrics_json: &str,
+) {
+    let tm = &meta["test_metrics"];
+    let (Some(auroc), Some(auprc), Some(brier), Some(sens), Some(spec), Some(f1)) = (
+        tm["auroc"].as_f64(),
+        tm["auprc"].as_f64(),
+        tm["brier_score"].as_f64(),
+        tm["sensitivity"].as_f64(),
+        tm["specificity"].as_f64(),
+        tm["f1_score"].as_f64(),
+    ) else {
+        return;
+    };
+
+    let cal_method = meta["calibration_method"]
+        .as_str()
+        .unwrap_or("NONE_UNCALIBRATED");
+    let ece = meta["ece_score"].as_f64();
+    let cal_thresh = meta["calibrated_threshold"]
+        .as_f64()
+        .or_else(|| meta["decision_threshold"].as_f64());
+    let thresh = cal_thresh.unwrap_or(default_thresh);
+    let monotone = meta["monotone_constraints_active"]
+        .as_bool()
+        .unwrap_or(false);
+    let bins_json =
+        serde_json::to_string(&meta["reliability_bins"]).unwrap_or_else(|_| "[]".into());
+    let algorithm = meta["algorithm"].as_str().unwrap_or("lightgbm");
+
+    let _ = sqlx::query(
+        r#"
+        UPDATE icu_models SET
+            algorithm = ?,
+            decision_threshold = ?,
+            auroc = ?,
+            auprc = ?,
+            brier_score = ?,
+            sensitivity = ?,
+            specificity = ?,
+            f1_score = ?,
+            metrics_json = ?,
+            calibration_method = ?,
+            ece_score = ?,
+            calibrated_threshold = ?,
+            monotone_constraints_active = ?,
+            reliability_bins_json = ?
+        WHERE model_id = ?
+        "#,
+    )
+    .bind(algorithm)
+    .bind(thresh)
+    .bind(auroc)
+    .bind(auprc)
+    .bind(brier)
+    .bind(sens)
+    .bind(spec)
+    .bind(f1)
+    .bind(metrics_json)
+    .bind(cal_method)
+    .bind(ece)
+    .bind(cal_thresh)
+    .bind(if monotone { 1i64 } else { 0i64 })
+    .bind(&bins_json)
+    .bind(target_model_id)
+    .execute(pool)
+    .await;
+}
+
+async fn sync_icu_models_from_disk_if_present(pool: &SqlitePool) {
+    let candidate_dirs = [
+        Path::new("ai-service-python/models/icu"),
+        Path::new("../ai-service-python/models/icu"),
+    ];
+    let Some(models_dir) = candidate_dirs.iter().copied().find(|p| p.exists()) else {
+        return;
+    };
+
+    if let Ok(raw) = fs::read_to_string(models_dir.join("champion_model_meta.json")) {
+        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&raw) {
+            let tm = &meta["test_metrics"];
+            let metrics_json = serde_json::json!({
+                "auroc": tm["auroc"],
+                "auprc": tm["auprc"],
+                "brier_score": tm["brier_score"],
+                "nll_score": tm["nll_score"],
+                "ece_score": meta["ece_score"],
+                "sensitivity": tm["sensitivity"],
+                "specificity": tm["specificity"],
+                "f1_score": tm["f1_score"],
+                "precision": tm["precision"],
+                "cohort_summary": meta["cohort_summary"],
+                "monotonicity_comparison": meta["monotonicity_comparison"]
+            })
+            .to_string();
+            sync_single_icu_model_from_meta(
+                pool,
+                "omnimed-icu-lightgbm-v1",
+                &meta,
+                0.02,
+                &metrics_json,
+            )
+            .await;
+        }
+    }
+
+    if let Ok(raw) = fs::read_to_string(models_dir.join("cohort_champion_meta.json")) {
+        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&raw) {
+            let tm = &meta["test_metrics"];
+            let metrics_json = serde_json::json!({
+                "auroc": tm["auroc"],
+                "auprc": tm["auprc"],
+                "brier_score": tm["brier_score"],
+                "nll_score": tm["nll_score"],
+                "ece_score": meta["ece_score"],
+                "sensitivity": tm["sensitivity"],
+                "specificity": tm["specificity"],
+                "f1_score": tm["f1_score"],
+                "chf_auroc": meta["chf_secondary_metrics"]["auroc"],
+                "chf_auprc": meta["chf_secondary_metrics"]["auprc"],
+                "cohort": meta["dataset_source"]
+            })
+            .to_string();
+            sync_single_icu_model_from_meta(
+                pool,
+                "omnimed-icu-cohort-lgbm-v1",
+                &meta,
+                0.67,
+                &metrics_json,
+            )
+            .await;
+        }
+    }
 }
 

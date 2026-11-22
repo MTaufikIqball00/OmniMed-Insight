@@ -86,6 +86,51 @@ async def handle_image_validation_error(_request: Request, exc: ImageValidationE
     )
 
 
+def _get_icu_calibration_summary() -> Dict[str, Any]:
+    try:
+        icu_eng = get_icu_engine()
+        return {
+            "calibration_method": icu_eng.calibration_method,
+            "ece_score": icu_eng.ece_score,
+            "calibrated_threshold": round(icu_eng.calibrated_threshold, 4)
+            if icu_eng.calibrated_threshold is not None
+            else None,
+            "monotone_constraints_active": icu_eng.monotone_constraints_active,
+            "reliability_bins": icu_eng.reliability_bins,
+        }
+    except Exception:
+        return {
+            "calibration_method": "NONE_UNCALIBRATED",
+            "ece_score": None,
+            "calibrated_threshold": None,
+            "monotone_constraints_active": False,
+            "reliability_bins": [],
+        }
+
+
+def _get_cohort_calibration_summary() -> Dict[str, Any]:
+    try:
+        icu_eng = get_icu_engine()
+        cohort_meta_file = icu_eng.models_dir / "cohort_champion_meta.json"
+        if cohort_meta_file.exists():
+            with open(cohort_meta_file, "r", encoding="utf-8") as f:
+                cohort_meta = json.load(f)
+            return {
+                "calibration_method": cohort_meta.get("calibration_method", "NONE_UNCALIBRATED"),
+                "ece_score": cohort_meta.get("ece_score"),
+                "calibrated_threshold": cohort_meta.get("calibrated_threshold"),
+                "monotone_constraints_active": bool(cohort_meta.get("monotone_constraints_active", False)),
+            }
+    except Exception:
+        pass
+    return {
+        "calibration_method": "NONE_UNCALIBRATED",
+        "ece_score": None,
+        "calibrated_threshold": None,
+        "monotone_constraints_active": False,
+    }
+
+
 @app.get("/health")
 def health_check() -> Dict[str, Any]:
     eng = get_engine()
@@ -98,7 +143,18 @@ def health_check() -> Dict[str, Any]:
         "model_id": "omnimed-densenet121-xai",
         "model_version": eng.model_version,
         "model_architecture": "DenseNet-121 (PyTorch Differentiable Vision Backbone + Grad-CAM Hook)",
-        "calibration_status": eng.calibration_status,
+        "calibration_status": getattr(eng, "calibration_status", "RESEARCH_UNVERIFIED"),
+        "calibration_method": getattr(eng, "calibration_method", "NONE_UNCALIBRATED"),
+        "ece_score": getattr(eng, "ece_score", None),
+        "brier_score": getattr(eng, "brier_score", None),
+        "nll_score": getattr(eng, "nll_score", None),
+        "checkpoint_sha256": getattr(eng, "checkpoint_sha256", None),
+        "checkpoint_data_provenance": getattr(
+            eng, "checkpoint_data_provenance", "UNINITIALIZED_RESEARCH_BACKBONE"
+        ),
+        "checkpoint_load_error": getattr(eng, "checkpoint_load_error", None),
+        "reliability_bins": getattr(eng, "reliability_bins", []),
+        "icu_calibration": _get_icu_calibration_summary(),
         "supported_modalities": ["CXR", "MRI"],
         "supported_xai_methods": ["GRAD_CAM", "GRAD_CAM_PLUS_OCCLUSION"],
         "external_llm_status": "DISABLED_FOR_PHI_GOVERNANCE",
@@ -112,13 +168,21 @@ def health_check() -> Dict[str, Any]:
 @app.get("/internal/v1/models", dependencies=[Depends(verify_internal_token)])
 def list_models() -> Dict[str, Any]:
     eng = get_engine()
+    icu_cal = _get_icu_calibration_summary()
+    cohort_cal = _get_cohort_calibration_summary()
     return {
         "models": [
             {
                 "model_id": "omnimed-densenet121-xai",
                 "model_version": eng.model_version,
                 "architecture": "DenseNet-121 (TorchVision PyTorch)",
-                "calibration_status": eng.calibration_status,
+                "calibration_status": getattr(eng, "calibration_status", "RESEARCH_UNVERIFIED"),
+                "calibration_method": getattr(eng, "calibration_method", "NONE_UNCALIBRATED"),
+                "ece_score": getattr(eng, "ece_score", None),
+                "checkpoint_sha256": getattr(eng, "checkpoint_sha256", None),
+                "checkpoint_data_provenance": getattr(
+                    eng, "checkpoint_data_provenance", "UNINITIALIZED_RESEARCH_BACKBONE"
+                ),
                 "execution_device": eng.device_label,
                 "supported_modalities": ["CXR", "MRI"],
                 "supported_xai_methods": ["GRAD_CAM", "GRAD_CAM_PLUS_OCCLUSION"],
@@ -143,9 +207,13 @@ def list_models() -> Dict[str, Any]:
                 "model_version": "1.0.0",
                 "architecture": "LightGBM + SHAP TreeExplainer (Temporal Sepsis-3 Early Warning)",
                 "calibration_status": "VALIDATED_TEST_COHORT",
+                "calibration_method": icu_cal["calibration_method"],
+                "ece_score": icu_cal["ece_score"],
+                "calibrated_threshold": icu_cal["calibrated_threshold"],
+                "monotone_constraints_active": icu_cal["monotone_constraints_active"],
                 "execution_device": "CPU",
                 "prediction_horizon": "6_to_12_hours",
-                "decision_threshold": 0.05,
+                "decision_threshold": icu_cal["calibrated_threshold"] or 0.05,
                 "supported_modalities": ["ICU_LONGITUDINAL_VITALS_AND_LABS"],
                 "supported_xai_methods": ["TREE_SHAP_FEATURE_ATTRIBUTION"],
                 "target_endpoint": "SEPSIS_DETERIORATION",
@@ -156,9 +224,13 @@ def list_models() -> Dict[str, Any]:
                 "model_version": "1.0.0",
                 "architecture": "LightGBM + SHAP TreeExplainer (Archive2 5,000-Patient ICU Cohort)",
                 "calibration_status": "VALIDATED_TEST_COHORT",
+                "calibration_method": cohort_cal["calibration_method"],
+                "ece_score": cohort_cal["ece_score"],
+                "calibrated_threshold": cohort_cal["calibrated_threshold"],
+                "monotone_constraints_active": cohort_cal["monotone_constraints_active"],
                 "execution_device": "CPU",
                 "prediction_horizon": "ICU_ADMISSION_AND_STAY",
-                "decision_threshold": 0.05,
+                "decision_threshold": cohort_cal["calibrated_threshold"] or 0.05,
                 "supported_modalities": ["ICU_COHORT_CLINICAL_PANEL"],
                 "supported_xai_methods": ["TREE_SHAP_FEATURE_ATTRIBUTION"],
                 "target_endpoint": "SEPSIS_AND_CHF_DETERIORATION",
@@ -204,9 +276,36 @@ def predict_icu_risk(payload: IcuPredictRequest) -> IcuPredictResponse:
 def get_icu_model_metadata() -> Dict[str, Any]:
     eng = get_icu_engine()
     res = dict(eng.meta)
+    res.setdefault("calibration_method", eng.calibration_method)
+    res.setdefault("ece_score", eng.ece_score)
+    res.setdefault(
+        "calibrated_threshold",
+        round(eng.calibrated_threshold, 4) if eng.calibrated_threshold is not None else None,
+    )
+    res.setdefault("monotone_constraints_active", eng.monotone_constraints_active)
+    res.setdefault("reliability_bins", eng.reliability_bins)
+
     cohort_meta_file = eng.models_dir / "cohort_champion_meta.json"
     if cohort_meta_file.exists():
         with open(cohort_meta_file, "r", encoding="utf-8") as f:
-            res["cohort_model"] = json.load(f)
+            cohort_meta = json.load(f)
+        cohort_cal_file = eng.models_dir / "cohort_calibration_metrics.json"
+        cohort_cal: Dict[str, Any] = {}
+        if cohort_cal_file.exists():
+            with open(cohort_cal_file, "r", encoding="utf-8") as f:
+                cohort_cal = json.load(f)
+        cohort_meta.setdefault("calibration_method", cohort_cal.get("best_method", "NONE_UNCALIBRATED"))
+        cohort_meta.setdefault(
+            "ece_score",
+            (cohort_cal.get("selected_test_metrics") or {}).get("ece_score")
+            or (cohort_meta.get("test_metrics") or {}).get("ece_score"),
+        )
+        cohort_meta.setdefault("calibrated_threshold", cohort_cal.get("calibrated_threshold"))
+        cohort_meta.setdefault(
+            "monotone_constraints_active",
+            cohort_cal.get("monotone_constraints_active", False),
+        )
+        cohort_meta.setdefault("reliability_bins", cohort_cal.get("reliability_bins", []))
+        res["cohort_model"] = cohort_meta
     return res
 

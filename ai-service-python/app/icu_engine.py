@@ -124,34 +124,84 @@ class IcuEarlyWarningEngine:
         if models_dir is None:
             models_dir = Path(__file__).resolve().parent.parent / "models" / "icu"
         self.models_dir = models_dir
-        
+
         self.model = None
+        self.calibrator = None
         self.explainer = None
         self.meta = {}
         self.feature_cols = []
         self.imputation_medians = {}
         self.threshold = 0.05
-        
+        self.calibration_method: str = "NONE_UNCALIBRATED"
+        self.ece_score: Optional[float] = None
+        self.calibrated_threshold: Optional[float] = None
+        self.monotone_constraints_active: bool = False
+        self.reliability_bins: List[Dict[str, Any]] = []
+
         self._load_artifacts()
-        
+
     def _load_artifacts(self):
         meta_file = self.models_dir / "champion_model_meta.json"
         model_file = self.models_dir / "champion_model.joblib"
+        calibrator_file = self.models_dir / "calibrator.joblib"
+        cal_metrics_file = self.models_dir / "calibration_metrics.json"
         explainer_file = self.models_dir / "shap_explainer.joblib"
-        
+
         if not meta_file.exists() or not model_file.exists():
             raise FileNotFoundError(f"ICU model artifacts missing in {self.models_dir}. Please run train_models.py first.")
-            
+
         with open(meta_file, "r", encoding="utf-8") as f:
             self.meta = json.load(f)
-            
+
+        cal_metrics: Dict[str, Any] = {}
+        if cal_metrics_file.exists():
+            with open(cal_metrics_file, "r", encoding="utf-8") as f:
+                cal_metrics = json.load(f)
+
         self.feature_cols = self.meta["feature_cols"]
         self.imputation_medians = self.meta["imputation_medians"]
         self.threshold = float(self.meta.get("decision_threshold", 0.05))
-        
+
         self.model = joblib.load(model_file)
+        if calibrator_file.exists():
+            self.calibrator = joblib.load(calibrator_file)
         if explainer_file.exists():
             self.explainer = joblib.load(explainer_file)
+
+        self.calibration_method = str(
+            self.meta.get("calibration_method")
+            or cal_metrics.get("best_method")
+            or "NONE_UNCALIBRATED"
+        )
+
+        ece_val = self.meta.get("ece_score")
+        if ece_val is None:
+            ece_val = (self.meta.get("test_metrics") or {}).get("ece_score")
+        if ece_val is None:
+            ece_val = (cal_metrics.get("selected_test_metrics") or {}).get("ece_score")
+        self.ece_score = float(ece_val) if ece_val is not None else None
+
+        cal_thresh_val = self.meta.get("calibrated_threshold")
+        if cal_thresh_val is None:
+            cal_thresh_val = cal_metrics.get("calibrated_threshold")
+        if cal_thresh_val is not None:
+            self.calibrated_threshold = float(cal_thresh_val)
+            self.threshold = float(cal_thresh_val)
+        elif self.calibrator is not None:
+            self.calibrated_threshold = float(self.threshold)
+        else:
+            self.calibrated_threshold = None
+
+        self.monotone_constraints_active = bool(
+            self.meta.get(
+                "monotone_constraints_active",
+                cal_metrics.get("monotone_constraints_active", False),
+            )
+        )
+        bins_val = self.meta.get("reliability_bins")
+        if bins_val is None:
+            bins_val = cal_metrics.get("reliability_bins")
+        self.reliability_bins = list(bins_val) if bins_val else []
             
     def compute_features_from_observations(
         self,
@@ -284,6 +334,12 @@ class IcuEarlyWarningEngine:
             observations, age, gender, current_iculos
         )
         
+        cal_thresh_out = (
+            round(self.calibrated_threshold, 4)
+            if self.calibrated_threshold is not None
+            else None
+        )
+
         if data_quality == "INSUFFICIENT_DATA":
             return {
                 "stay_id": stay_id,
@@ -294,16 +350,24 @@ class IcuEarlyWarningEngine:
                 "risk_tier": "INSUFFICIENT_DATA",
                 "model_id": self.meta.get("model_id", "omnimed-icu-v1"),
                 "model_version": "1.0.0",
-                "decision_threshold": self.threshold,
+                "decision_threshold": round(self.threshold, 4),
+                "calibration_method": self.calibration_method,
+                "ece_score": self.ece_score,
+                "calibrated_threshold": cal_thresh_out,
+                "monotone_constraints_active": self.monotone_constraints_active,
+                "reliability_bins": self.reliability_bins,
                 "data_quality_status": "INSUFFICIENT_DATA",
                 "stale_observations_warning": "Fewer than 2 vital sign observations recorded in current window.",
                 "top_shap_attributions": [],
                 "vital_signs_summary": vitals_summary,
                 "clinical_disclaimer": "Insufficient observations available to evaluate clinical deterioration risk."
             }
-            
+
         vec_df = pd.DataFrame(vec, columns=self.feature_cols)
-        prob = float(self.model.predict_proba(vec_df)[0, 1])
+        if self.calibrator is not None:
+            prob = float(self.calibrator.predict_proba(vec_df)[0, 1])
+        else:
+            prob = float(self.model.predict_proba(vec_df)[0, 1])
         
         # Risk Stratification based on validated operating threshold
         # Threshold (self.threshold) marks boundary for High Risk early warning
@@ -356,7 +420,12 @@ class IcuEarlyWarningEngine:
             "risk_tier": risk_tier,
             "model_id": self.meta.get("model_id", "omnimed-icu-v1"),
             "model_version": "1.0.0",
-            "decision_threshold": round(self.threshold, 3),
+            "decision_threshold": round(self.threshold, 4),
+            "calibration_method": self.calibration_method,
+            "ece_score": self.ece_score,
+            "calibrated_threshold": cal_thresh_out,
+            "monotone_constraints_active": self.monotone_constraints_active,
+            "reliability_bins": self.reliability_bins,
             "data_quality_status": data_quality,
             "stale_observations_warning": "Some laboratory markers are older than 24h." if data_quality == "SPARSE_DATA" else None,
             "top_shap_attributions": top_shap_items,

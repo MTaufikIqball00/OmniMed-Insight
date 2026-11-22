@@ -4,7 +4,11 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use omnimed_backend_rust::{
-    build_app_router, config::AppConfig, db::init_db, routes::AppState,
+    build_app_router,
+    config::AppConfig,
+    db::{ensure_research_telemetry_columns, init_db},
+    models::{InternalAiResponse, InternalIcuPredictResponse},
+    routes::AppState,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -316,6 +320,16 @@ async fn test_icu_workspace_idor_and_alert_lifecycle() {
     assert!(ws_body["observations"].as_array().unwrap().len() >= 14);
     assert!(ws_body["predictions"].as_array().unwrap().len() >= 1);
     assert_eq!(ws_body["alerts"].as_array().unwrap().len(), 1);
+    let first_pred = &ws_body["predictions"][0];
+    assert!(first_pred["calibration_method"].is_string());
+    assert!(first_pred.get("ece_score").is_some());
+    assert!(first_pred.get("calibrated_threshold").is_some());
+    assert!(first_pred["monotone_constraints_active"].is_boolean());
+    let pred_bins: Vec<Value> =
+        serde_json::from_str(first_pred["reliability_bins_json"].as_str().unwrap()).unwrap();
+    assert!(pred_bins.iter().all(|b| b.get("avg_confidence").is_some()));
+    assert!(ws_body["active_model"]["calibration_method"].is_string());
+    assert!(ws_body["active_model"]["monotone_constraints_active"].is_boolean());
 
     // 3. Readonly user blocked from acknowledging alert
     let ro_ack = Request::builder()
@@ -362,5 +376,94 @@ async fn test_icu_workspace_idor_and_alert_lifecycle() {
     assert!(mod_body["total"].as_i64().unwrap() >= 1);
     assert_eq!(mod_body["models"][0]["model_id"], "omnimed-icu-lightgbm-v1");
     assert_eq!(mod_body["models"][0]["prediction_horizon"], "6_to_12_hours");
+    assert!(mod_body["models"][0]["calibration_method"].is_string());
+    assert!(mod_body["models"][0].get("ece_score").is_some());
+    assert!(mod_body["models"][0].get("calibrated_threshold").is_some());
+    assert!(mod_body["models"][0]["monotone_constraints_active"].is_boolean());
+    let model_bins: Vec<Value> = serde_json::from_str(
+        mod_body["models"][0]["reliability_bins_json"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(model_bins.iter().all(|b| b.get("empirical_accuracy").is_some()));
+}
+
+#[tokio::test]
+async fn test_research_telemetry_serde_defaults_and_idempotent_column_upgrade() {
+    // 1. Verify legacy InternalAiResponse & InternalIcuPredictResponse payloads parse with defaults
+    let legacy_ai_json = json!({
+        "job_id": "job-1",
+        "image_id": "img-1",
+        "status": "COMPLETED",
+        "model_id": "omnimed-densenet121-xai",
+        "model_version": "1.0",
+        "model_architecture": "DenseNet-121",
+        "calibration_status": "RESEARCH_UNVERIFIED",
+        "execution_device": "cpu",
+        "inference_duration_ms": 12.0,
+        "modality": "CXR",
+        "image_metadata": {},
+        "predicted_class_code": "CXR_NO_ACUTE_FINDING",
+        "predicted_class_label": "Normal",
+        "predicted_probability": 0.65,
+        "shannon_entropy": 1.1,
+        "uncertainty_level": "MODERATE",
+        "uncertainty_reason": "Test",
+        "class_scores": [],
+        "xai": {},
+        "limitations": [],
+        "clinical_safety_notice": "Decision support only."
+    });
+    let parsed_ai: InternalAiResponse = serde_json::from_value(legacy_ai_json).unwrap();
+    assert_eq!(parsed_ai.calibration_method, "NONE_UNCALIBRATED");
+    assert_eq!(
+        parsed_ai.checkpoint_data_provenance,
+        "UNINITIALIZED_RESEARCH_BACKBONE"
+    );
+    assert!(parsed_ai.reliability_bins.is_empty());
+
+    let legacy_icu_json = json!({
+        "stay_id": "stay-1",
+        "patient_id": "pat-1",
+        "prediction_time": "ICU Hour 1",
+        "prediction_horizon": "6_to_12_hours",
+        "risk_score": 0.12,
+        "risk_tier": "MODERATE",
+        "model_id": "omnimed-icu-lightgbm-v1",
+        "model_version": "1.0.0",
+        "decision_threshold": 0.05,
+        "data_quality_status": "ADEQUATE",
+        "stale_observations_warning": null,
+        "top_shap_attributions": [],
+        "vital_signs_summary": {},
+        "clinical_disclaimer": "Decision support only."
+    });
+    let parsed_icu: InternalIcuPredictResponse = serde_json::from_value(legacy_icu_json).unwrap();
+    assert_eq!(parsed_icu.calibration_method, "NONE_UNCALIBRATED");
+    assert!(!parsed_icu.monotone_constraints_active);
+    assert!(parsed_icu.reliability_bins.is_empty());
+
+    // 2. Verify ensure_research_telemetry_columns upgrades legacy SQLite tables idempotently
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::query("CREATE TABLE analysis_jobs (id TEXT PRIMARY KEY, calibration_status TEXT NOT NULL)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("CREATE TABLE icu_predictions (id TEXT PRIMARY KEY, risk_score REAL NOT NULL)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("CREATE TABLE icu_models (id TEXT PRIMARY KEY, model_id TEXT NOT NULL)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    ensure_research_telemetry_columns(&pool).await.unwrap();
+    // Second run must be a no-op and succeed idempotently
+    ensure_research_telemetry_columns(&pool).await.unwrap();
 }
 

@@ -1,9 +1,10 @@
 import hashlib
+import json
 import math
 import os
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
@@ -13,12 +14,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import densenet121
 
+from .calibration import MulticlassPlattScaler, TemperatureScaler
 from .imaging import load_and_validate_medical_image
 from .schemas import (
     AnalyzeImageRequest,
     AnalyzeImageResponse,
     ClassScoreItem,
     RegionAttributionItem,
+    ReliabilityBin,
     XaiArtifactReport,
 )
 
@@ -126,20 +129,191 @@ class MedicalDenseNetXaiEngine:
         in_features = self.model.classifier.in_features
         self.model.classifier = nn.Linear(in_features, 4)
 
+        self.calibration_status = "RESEARCH_UNVERIFIED"
+        self.calibration_method = "NONE_UNCALIBRATED"
+        self.ece_score: Optional[float] = None
+        self.brier_score: Optional[float] = None
+        self.nll_score: Optional[float] = None
+        self.checkpoint_sha256: Optional[str] = None
+        self.checkpoint_data_provenance: str = "UNINITIALIZED_RESEARCH_BACKBONE"
+        self.reliability_bins: List[Dict[str, Any]] = []
+        self.calibrator: Optional[Any] = None
+        self.checkpoint_load_error: Optional[str] = None
+        self.model_version = "omnimed-densenet121-xai-v1.1-calibrated"
+
         weights_path = os.environ.get("MODEL_WEIGHTS_PATH", "").strip()
-        if weights_path and Path(weights_path).is_file():
-            self.model.to(self.device)
-            state = torch.load(weights_path, map_location=self.device)
-            self.model.load_state_dict(state, strict=False)
-            self.calibration_status = "CUSTOM_CHECKPOINT"
-            self.model_version = f"densenet121-custom-{Path(weights_path).stem}"
+        if weights_path:
+            try:
+                self._load_and_validate_checkpoint(weights_path)
+            except Exception as exc:
+                self._apply_unverified_fallback(error_msg=str(exc))
         else:
-            self._initialize_structured_spatial_filters()
-            self.calibration_status = "RESEARCH_UNVERIFIED"
-            self.model_version = "omnimed-densenet121-xai-v1.1-calibrated"
-            self.model.to(self.device)
+            self._apply_unverified_fallback(error_msg=None)
 
         self.model.eval()
+
+    def _apply_unverified_fallback(self, error_msg: Optional[str]) -> None:
+        self._initialize_structured_spatial_filters()
+        self.calibration_status = "RESEARCH_UNVERIFIED"
+        self.calibration_method = "NONE_UNCALIBRATED"
+        self.ece_score = None
+        self.brier_score = None
+        self.nll_score = None
+        self.checkpoint_sha256 = None
+        self.checkpoint_data_provenance = "UNINITIALIZED_RESEARCH_BACKBONE"
+        self.reliability_bins = []
+        self.calibrator = None
+        self.checkpoint_load_error = error_msg
+        self.model_version = "omnimed-densenet121-xai-v1.1-calibrated"
+        self.model.to(self.device)
+        self.model.eval()
+
+    def _load_sidecar_calibration(self, ckpt_path: Path, actual_sha256: str) -> Optional[Dict[str, Any]]:
+        candidates = [ckpt_path.with_suffix(".calibration.json")]
+        metrics_candidate = ckpt_path.parent / "calibration_metrics.json"
+        if metrics_candidate.is_file():
+            candidates.append(metrics_candidate)
+        for cand in candidates:
+            if not cand.is_file():
+                continue
+            try:
+                data = json.loads(cand.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            target_sha = str(data.get("checkpoint_sha256") or "").strip().lower()
+            if cand.name == "calibration_metrics.json" and target_sha != actual_sha256.lower():
+                continue
+            return data
+        return None
+
+    def _load_and_validate_checkpoint(self, weights_path: str) -> None:
+        ckpt_path = Path(weights_path)
+        if not ckpt_path.is_file():
+            raise FileNotFoundError(f"MODEL_WEIGHTS_PATH file not found: {weights_path}")
+
+        actual_sha256 = hashlib.sha256(ckpt_path.read_bytes()).hexdigest()
+        expected_sha256 = os.environ.get("MODEL_WEIGHTS_EXPECTED_SHA256", "").strip().lower()
+        if expected_sha256 and actual_sha256.lower() != expected_sha256:
+            raise ValueError(
+                f"Checkpoint SHA-256 mismatch: expected {expected_sha256}, got {actual_sha256}"
+            )
+
+        payload = torch.load(ckpt_path, map_location=self.device)
+        cal_meta: Optional[Dict[str, Any]] = None
+
+        if isinstance(payload, dict) and "state_dict" in payload:
+            if payload.get("architecture") != "densenet121":
+                raise ValueError(f"Unsupported checkpoint architecture: {payload.get('architecture')!r}")
+            if int(payload.get("num_classes", -1)) != 4:
+                raise ValueError(f"Unsupported checkpoint num_classes: {payload.get('num_classes')!r}")
+            ckpt_modality = str(payload.get("modality", "CXR")).upper()
+            if ckpt_modality not in MODALITY_CLASS_CATALOG:
+                raise ValueError(f"Unsupported checkpoint modality: {ckpt_modality!r}")
+            expected_codes = [c["code"] for c in MODALITY_CLASS_CATALOG[ckpt_modality]]
+            ckpt_codes = payload.get("class_codes")
+            if ckpt_codes is not None and list(ckpt_codes) != expected_codes:
+                raise ValueError(f"Checkpoint class_codes mismatch: {ckpt_codes} != {expected_codes}")
+
+            state_dict = payload["state_dict"]
+            training_prov = payload.get("training_provenance")
+            if isinstance(training_prov, dict):
+                data_prov = str(
+                    training_prov.get("dataset_type")
+                    or ("SYNTHETIC_BENCHMARK_FIXTURE" if training_prov.get("is_synthetic_benchmark") else "EXTERNAL_CLINICAL_COHORT")
+                )
+            else:
+                data_prov = "CUSTOM_UNVERIFIED_PROVENANCE"
+            model_ver = str(payload.get("model_version") or f"densenet121-{ckpt_path.stem}")
+            raw_cal = payload.get("calibration")
+            if isinstance(raw_cal, dict):
+                cal_meta = raw_cal
+        elif isinstance(payload, dict) and payload and all(isinstance(v, torch.Tensor) for v in payload.values()):
+            state_dict = payload
+            data_prov = "CUSTOM_UNVERIFIED_PROVENANCE"
+            model_ver = f"densenet121-custom-{ckpt_path.stem}"
+        else:
+            raise ValueError("Checkpoint must be a valid omnimed-checkpoint-v2 dict or raw PyTorch state_dict.")
+
+        self.model.to(self.device)
+        self.model.load_state_dict(state_dict, strict=True)
+
+        for name, tensor in list(self.model.named_parameters()) + list(self.model.named_buffers()):
+            if not torch.isfinite(tensor).all():
+                raise ValueError(f"Checkpoint tensor '{name}' contains NaN or Inf values.")
+
+        self.model.eval()
+        with torch.no_grad():
+            dummy_logits = self.model(torch.zeros((1, 3, 224, 224), dtype=torch.float32, device=self.device))
+        if tuple(dummy_logits.shape) != (1, 4):
+            raise ValueError(f"Dummy forward output shape {tuple(dummy_logits.shape)} != (1, 4).")
+        if not torch.isfinite(dummy_logits).all():
+            raise ValueError("Dummy forward pass produced non-finite logits.")
+        max_abs_dummy = float(torch.max(torch.abs(dummy_logits)).item())
+        if max_abs_dummy >= 100.0:
+            raise ValueError(f"Dummy forward pass logits exploded (max|logit|={max_abs_dummy:.2f} >= 100.0).")
+
+        if cal_meta is None:
+            cal_meta = self._load_sidecar_calibration(ckpt_path, actual_sha256)
+
+        if isinstance(cal_meta, dict):
+            cal_method = str(
+                cal_meta.get("method") or cal_meta.get("calibration_method") or "NONE_UNCALIBRATED"
+            )
+            cal_validated = bool(cal_meta.get("calibration_validated", False))
+            cal_ece = cal_meta.get("ece_score")
+            if (
+                cal_method in ("TEMPERATURE_SCALING", "PLATT_SCALING")
+                and cal_ece is not None
+                and cal_validated
+            ):
+                params_dict = cal_meta.get("params") if isinstance(cal_meta.get("params"), dict) else cal_meta
+                if cal_method == "TEMPERATURE_SCALING":
+                    scaler: Any = TemperatureScaler.from_dict(params_dict)
+                else:
+                    scaler = MulticlassPlattScaler.from_dict(params_dict)
+
+                probe_probs = scaler.predict_proba(np.zeros(4, dtype=np.float64))
+                if not np.isfinite(probe_probs).all():
+                    raise ValueError("Loaded calibrator produced non-finite probabilities.")
+
+                self.calibrator = scaler
+                self.calibration_status = "CALIBRATED_CHECKPOINT"
+                self.calibration_method = cal_method
+                self.ece_score = round(float(cal_ece), 4) + 0.0
+                self.brier_score = (
+                    round(float(cal_meta["brier_score"]), 4) + 0.0
+                    if cal_meta.get("brier_score") is not None
+                    else None
+                )
+                self.nll_score = (
+                    round(float(cal_meta["nll_score"]), 4) + 0.0
+                    if cal_meta.get("nll_score") is not None
+                    else None
+                )
+                self.reliability_bins = list(cal_meta.get("reliability_bins") or [])
+            else:
+                self.calibrator = None
+                self.calibration_status = "CUSTOM_CHECKPOINT"
+                self.calibration_method = "NONE_UNCALIBRATED"
+                self.ece_score = None
+                self.brier_score = None
+                self.nll_score = None
+                self.reliability_bins = []
+        else:
+            self.calibrator = None
+            self.calibration_status = "CUSTOM_CHECKPOINT"
+            self.calibration_method = "NONE_UNCALIBRATED"
+            self.ece_score = None
+            self.brier_score = None
+            self.nll_score = None
+            self.reliability_bins = []
+
+        self.checkpoint_sha256 = actual_sha256
+        self.checkpoint_data_provenance = data_prov
+        self.model_version = model_ver
+        self.checkpoint_load_error = None
 
     def _initialize_structured_spatial_filters(self) -> None:
         """
@@ -148,6 +322,7 @@ class MedicalDenseNetXaiEngine:
         standardized intensity tensors so activations stay bounded (never exploding across
         121 dense layers).
         """
+        self.model.to(torch.device("cpu"))
         torch.manual_seed(20261026)
         with torch.no_grad():
             for name, param in self.model.named_parameters():
@@ -234,7 +409,7 @@ class MedicalDenseNetXaiEngine:
         act: torch.Tensor,
         priors: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
-        if self.calibration_status == "CUSTOM_CHECKPOINT":
+        if self.calibration_status in ("CUSTOM_CHECKPOINT", "CALIBRATED_CHECKPOINT"):
             return raw_logits, priors[0], priors[0], 0.5
 
         anomaly_map, grid_7, lung_mask, basal_mask, central_mask = priors
@@ -294,15 +469,24 @@ class MedicalDenseNetXaiEngine:
             act_live = activations[0]
             act_live.retain_grad()
 
-            priors = self._compute_anatomical_spatial_priors(arr_224, req.modality)
-            calibrated_logits, anomaly_map, basal_anom, top_anom_val = self._compute_calibrated_logits(
-                raw_logits, act_live, priors
-            )
-
-            probs = F.softmax(calibrated_logits, dim=1)
-
-            probs_np = np.array(probs.detach().cpu().tolist()[0], dtype=np.float32)
-            logits_np = np.array(calibrated_logits.detach().cpu().tolist()[0], dtype=np.float32)
+            if self.calibration_status == "RESEARCH_UNVERIFIED":
+                priors = self._compute_anatomical_spatial_priors(arr_224, req.modality)
+                calibrated_logits, anomaly_map, basal_anom, top_anom_val = self._compute_calibrated_logits(
+                    raw_logits, act_live, priors
+                )
+                probs = F.softmax(calibrated_logits, dim=1)
+                probs_np = np.array(probs.detach().cpu().tolist()[0], dtype=np.float32)
+                logits_np = np.array(calibrated_logits.detach().cpu().tolist()[0], dtype=np.float32)
+                score_tensor = calibrated_logits
+            else:
+                top_anom_val = 0.5
+                logits_np = np.array(raw_logits.detach().cpu().tolist()[0], dtype=np.float32)
+                if self.calibration_status == "CALIBRATED_CHECKPOINT" and self.calibrator is not None:
+                    probs_np = np.asarray(self.calibrator.predict_proba(logits_np), dtype=np.float32)
+                else:
+                    probs = F.softmax(raw_logits, dim=1)
+                    probs_np = np.array(probs.detach().cpu().tolist()[0], dtype=np.float32)
+                score_tensor = raw_logits
 
             pred_idx = int(np.argmax(probs_np))
             explain_idx = (
@@ -311,7 +495,7 @@ class MedicalDenseNetXaiEngine:
                 else pred_idx
             )
 
-            target_score = calibrated_logits[0, explain_idx]
+            target_score = score_tensor[0, explain_idx]
             target_score.backward(retain_graph=False)
 
             act = activations[0].detach()[0]  # [C, 7, 7]
@@ -321,10 +505,13 @@ class MedicalDenseNetXaiEngine:
                 else (gradients[0].detach()[0] if gradients else torch.zeros_like(act))
             )
 
-            if self.calibration_status == "CUSTOM_CHECKPOINT":
-                weights = torch.mean(grad, dim=(1, 2))
-                cam = F.relu(torch.sum(weights[:, None, None] * act, dim=0))
-                cam_np = np.array(cam.cpu().tolist(), dtype=np.float32)
+            if self.calibration_status in ("CUSTOM_CHECKPOINT", "CALIBRATED_CHECKPOINT"):
+                cam_hi = F.relu((grad * act).sum(dim=0))
+                cam_np = np.array(cam_hi.cpu().tolist(), dtype=np.float32)
+                if float(np.max(cam_np)) < 1e-7:
+                    weights = torch.mean(grad, dim=(1, 2))
+                    cam_gc = F.relu(torch.sum(weights[:, None, None] * act, dim=0))
+                    cam_np = np.array(cam_gc.cpu().tolist(), dtype=np.float32)
             else:
                 # Localized HiResCAM over L2-normalized denseblock4 feature vectors
                 a_unit = F.normalize(F.relu(act), p=2, dim=0)
@@ -357,6 +544,10 @@ class MedicalDenseNetXaiEngine:
                     p50 = float(np.percentile(cam_norm_7x7, 50))
                     cam_norm_7x7 = np.clip((cam_norm_7x7 - p50 * 0.55) / max(1.0 - p50 * 0.55, 1e-6), 0.0, 1.0)
                     cam_norm_7x7 = (cam_norm_7x7 ** 1.25).astype(np.float32)
+            else:
+                p45 = float(np.percentile(cam_norm_7x7, 45))
+                cam_norm_7x7 = np.clip((cam_norm_7x7 - p45) / max(1.0 - p45, 1e-6), 0.0, 1.0)
+                cam_norm_7x7 = (cam_norm_7x7 ** 1.2).astype(np.float32)
         finally:
             fh.remove()
             bh.remove()
@@ -375,7 +566,7 @@ class MedicalDenseNetXaiEngine:
         upsampled_cam[:, :bw_px] = 0.0
         upsampled_cam[:, -bw_px:] = 0.0
 
-        if explain_idx == 0 and top_anom_val < 0.14:
+        if self.calibration_status == "RESEARCH_UNVERIFIED" and explain_idx == 0 and top_anom_val < 0.14:
             max_u = float(np.max(upsampled_cam))
             if max_u > 1e-6:
                 upsampled_cam = (upsampled_cam / max_u) * 0.38
@@ -470,10 +661,18 @@ class MedicalDenseNetXaiEngine:
         )
 
         limitations = [
-            f"Calibration Status: {self.calibration_status} ({self.model_version}). Not cleared by FDA/CE for clinical diagnosis.",
-            "Grad-CAM explains spatial sensitivity of the final DenseNet-121 convolutional block (7x7 grid), not causal pathophysiology.",
+            (
+                f"Calibration Status: {self.calibration_status} ({self.model_version}, "
+                f"method={self.calibration_method}, provenance={self.checkpoint_data_provenance}). "
+                "Not cleared by FDA/CE for clinical diagnosis."
+            ),
+            "Grad-CAM / HiResCAM explains spatial sensitivity of the final DenseNet-121 convolutional block (7x7 grid), not causal pathophysiology.",
             "Single-view 2D raster evaluation cannot substitute for multi-planar DICOM windowing, prior imaging comparison, or physical examination.",
         ]
+        if self.checkpoint_data_provenance == "SYNTHETIC_BENCHMARK_FIXTURE":
+            limitations.append(
+                "SYNTHETIC_BENCHMARK_FIXTURE disclosure: Checkpoint was trained on deterministic synthetic phantoms for pipeline verification only and is NOT clinically trained."
+            )
 
         duration_ms = round((time.perf_counter() - t0) * 1000.0, 2)
 
@@ -485,6 +684,13 @@ class MedicalDenseNetXaiEngine:
             model_version=self.model_version,
             model_architecture="DenseNet-121 (PyTorch Differentiable Vision Backbone + HiResCAM Hook)",
             calibration_status=self.calibration_status,
+            calibration_method=self.calibration_method,
+            ece_score=self.ece_score,
+            brier_score=self.brier_score,
+            nll_score=self.nll_score,
+            checkpoint_sha256=self.checkpoint_sha256,
+            checkpoint_data_provenance=self.checkpoint_data_provenance,
+            reliability_bins=[ReliabilityBin(**b) for b in self.reliability_bins],
             execution_device=self.device_label,
             inference_duration_ms=duration_ms,
             modality=req.modality,
